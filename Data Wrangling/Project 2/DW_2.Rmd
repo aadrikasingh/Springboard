@@ -1,0 +1,47 @@
+---
+title: 'Data Wrangling Exercise 2: Dealing with missing values'
+author: "Aadrika Singh"
+date: "August 15, 2017"
+output: html_document
+---
+
+# Load packages and data
+```{r}
+library(dplyr)
+library(tidyr)
+
+ship <- read.csv("titanic_original.csv")
+
+str(ship)
+summary(ship)
+```
+
+# Port of embarkation
+```{r}
+#Replace missing values with S
+str(ship$embarked)
+ship$embarked[ship$embarked == ''] <- "S"
+```
+
+# Age
+```{r}
+ship$age[is.na(ship$age)] <- mean(ship$age, na.rm = TRUE)
+```
+
+# Lifeboat
+```{r}
+levels(ship$boat)
+levels(ship$boat)[1] <- "None"
+```
+
+# Cabin
+```{r}
+ship$has_cabin_number <- as.numeric(ship$cabin != "")
+table(ship$has_cabin_number)
+```
+
+# Create CSV file
+```{r}
+write.csv(x = ship, file = "titanic_clean.csv")
+```
+
