@@ -62,5 +62,5 @@ UCI_tidy <- UCI %>%
   group_by(ActivityLabel,ActivityName,Subject) %>% 
   summarise_all(funs(mean(.,na.rm = TRUE)))
 
-# Exporting the tidy data set into a CSV file
+# Exporting the tidy data set into a CSV file ==============================================
 write.csv(UCI_tidy, "tidy_data.csv")
