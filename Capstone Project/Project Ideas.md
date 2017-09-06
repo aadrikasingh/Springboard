@@ -20,3 +20,15 @@ Industries, particularly telecommunication industries (to understand which facto
 • [Test Data](http://www.kdd.org/cupfiles/KDDCupData/2009/orange_small_test.data.zip)
 
 • [Train Churn Labels](http://www.kdd.org/cupfiles/KDDCupData/2009/files/orange_small_train_churn.labels)
+# 3. Retail Forecasting
+## Project Description
+The idea is to use historical sales data, and use regression and time - analysis techniques to predict future sales for the business.
+## Who's this for?
+Retail businesses (for inventory planning, product pricing, promotion, and placement)
+## Data Set Description
+• [Walmart](https://www.kaggle.com/c/walmart-recruiting-store-sales-forecasting/data)
+
+OR
+
+• [UCI Machine Learning Repository](http://archive.ics.uci.edu/ml/datasets/online+retail)
+
