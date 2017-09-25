@@ -1,0 +1,168 @@
+---
+title: "Capstone Project"
+author: "Aadrika Singh"
+date: "September 25, 2017"
+output: html_document
+---
+
+## Importing dataset
+```{r}
+# Reading the dataset ; reading all blanks as NA
+telco <- as.data.frame(read.delim("Dataset/orange_small_train.data", na.strings=c("","NA"), header=TRUE, sep="\t", fill=TRUE))
+# Add the variable *churn* as a new column
+telco$churn <- as.factor(read.table("Dataset/orange_small_train_churn.txt")$V1)
+```
+There are *50,000* observations of *230* variables in the dataset, from which selected input features will be used to predict the outcome variable **churn**. From the dataset description, we know that the first *190* variables are **numerical** and the last *40* are **categorical**.
+
+## Cleaning the dataset
+```{r}
+# Checking if any column of the dataset has all missing values and removing it
+checkNA <- sapply(X = telco, FUN = function(x){all(is.na(x))})
+telco <- telco[, checkNA == FALSE]
+
+# Looking at the proportion of missing values in the remaining columns and removing the columns which have more than 90% NA values
+totalNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
+telco <- telco[, totalNA < 0.9]
+```
+The dataset now has only *77* variables, all of which have **less than 90%** missing data.
+
+## Dealing with the missing values
+For numeric columns with great outliers, NA values will be replaced by the median of the column.For numeric columns with mean values not very far from the max values, NA values will be replaced by the mean.Another approach is to use the "MICE" package, for multiple imputation. However, I'm not following this approach due to computational restrictions.
+For categorical variables, all the NA values will be replaced by another level called "Unknown". Additionally, all the variables with more than 5 factor levels have been removed.
+```{r}
+# Function to replace NA values with median of the column
+replaceMed <- function(x){ifelse(is.na(x), median(x, na.rm = TRUE), x)}
+
+# Function to replace NA values with mean of the column
+replaceMean <- function(x){ifelse(is.na(x), mean(x, na.rm = TRUE), x)}
+
+# Analyzing NA values in the numeric columns of the dataset ****************************************************************
+summary(subset(telco, select = colnames(telco)[1:11]))
+summary(subset(telco, select = colnames(telco)[12:22]))
+summary(subset(telco, select = colnames(telco)[23:33]))
+summary(subset(telco, select = colnames(telco)[34:44]))
+
+telco$Var72 <- replaceMean(telco$Var72)
+telco$Var153 <- replaceMean(telco$Var153)
+telco$Var189 <- replaceMean(telco$Var189)
+
+for(i in colnames(telco)[1:42]){
+  telco[[i]] <- replaceMed(telco[[i]])
+}
+
+# Analyzing NA values in the categorical columns of the dataset ************************************************************
+for(i in colnames(telco)[43:76]){
+ levels(telco[[i]]) <- c(levels(telco[[i]]), "Unknown") 
+ telco[[i]][is.na(telco[[i]])] <- "Unknown"
+ if(length(levels(telco[[i]])) > 5) {
+   telco[[i]] <- NULL
+ }
+}
+```
+The dataset no longer has any missing values, and has *53* variables.
+
+## Exploratory Data Analysis
+```{r}
+# Replacing the column names to be in proper order
+names(telco)[1:52] <- paste("V", 1:52, sep = "")
+
+# Replacing -1 with 0 for churn variable
+levels(telco$churn)[telco$churn == "-1"] <- "0"
+
+library(caTools)
+split <- sample.split(telco$churn, SplitRatio = 0.75)
+train <- subset(telco, split == TRUE)
+test <- subset(telco, split == FALSE)
+
+logMod <- glm(churn ~ ., data = train, family = binomial)
+summary(logMod)
+
+library(ggplot2)
+
+# Analyzing the variables with intercepts NA
+ggplot(aes(x = V41), data = train) +
+  geom_histogram()
+
+ggplot(aes(x = V45), data = train) +
+  geom_bar()
+
+ggplot(aes(x = V51), data = train) +
+  geom_bar()
+
+logMod <- glm(churn ~ .-V41-V45-V51, data = train, family = binomial)
+
+# Checking for multi-collinearity
+library(corrplot)
+corrplot(cor(train[, 1:42]), method = "number", number.cex = 0.7)
+
+ggplot(aes(x = V4, y = V5), data = train) +
+  geom_point(alpha = 0.3)
+
+ggplot(aes(x = V4, y = V38), data = train) +
+  geom_point(alpha = 0.3)
+
+ggplot(aes(x = V4, y = V7), data = train) +
+  geom_point(alpha = 0.3)
+
+```
+
+
+## Dealing with multicollinearity
+```{r}
+# Using VIF to detect and remove multi-collinearity - using a threshold of 2
+library(car)
+vif(logMod)
+
+# Remove V5
+logMod <- glm(churn ~ .-V41-V45-V51-V5, data = train, family = binomial)
+vif(logMod)
+
+# Remove V4
+logMod <- glm(churn ~ .-V41-V45-V51-V5-V4, data = train, family = binomial)
+vif(logMod)
+
+# Remove V37
+logMod <- glm(churn ~ .-V41-V45-V51-V5-V4-V37, data = train, family = binomial)
+vif(logMod)
+
+# Remove V30
+logMod <- glm(churn ~ .-V41-V45-V51-V5-V4-V37-V30, data = train, family = binomial)
+vif(logMod)
+
+# Remove V27
+logMod <- glm(churn ~ .-V41-V45-V51-V5-V4-V37-V30-V27, data = train, family = binomial)
+vif(logMod)
+
+# Remove V24
+logMod <- glm(churn ~ .-V41-V45-V51-V5-V4-V37-V30-V27-V24, data = train, family = binomial)
+vif(logMod)
+
+# Remove V7
+logMod <- glm(churn ~ .-V41-V45-V51-V5-V4-V37-V30-V27-V24-V7, data = train, family = binomial)
+vif(logMod)
+
+# Remove V23
+logMod <- glm(churn ~ .-V41-V45-V51-V5-V4-V37-V30-V27-V24-V7-V23, data = train, family = binomial)
+vif(logMod)
+
+# Remove V26
+logMod <- glm(churn ~ .-V41-V45-V51-V5-V4-V37-V30-V27-V24-V7-V23-V26, data = train, family = binomial)
+vif(logMod)
+
+# Remove V15
+logMod <- glm(churn ~ .-V41-V45-V51-V5-V4-V37-V30-V27-V24-V7-V23-V26-V15, data = train, family = binomial)
+vif(logMod)
+
+# Remove V21
+logMod <- glm(churn ~ .-V41-V45-V51-V5-V4-V37-V30-V27-V24-V7-V23-V26-V15-V21, data = train, family = binomial)
+vif(logMod)
+
+# Remove V38
+logMod <- glm(churn ~ .-V41-V45-V51-V5-V4-V37-V30-V27-V24-V7-V23-V26-V15-V21-V38, data = train, family = binomial)
+vif(logMod)
+
+summary(logMod)
+
+```
+
+
