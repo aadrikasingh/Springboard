@@ -1,0 +1,35 @@
+---
+title: "Capstone Project Proposal"
+author: "Aadrika Singh"
+date: "September 27, 2017"
+output: html_document
+---
+## Problem
+In the modern-world scenario of telecommunication industries, the customers have a range of options to choose from, as far as service providers are concerned. Factors such as perceived frequent service disruptions, poor customer service experiences, and better offers from other competing carriers may cause a customer to churn (likely to leave). 
+
+Customer churn includes customers stopping the use of a service, switching to a competitor service, switching to a lower-tier experience in the service or reducing engagement with the service.
+
+The purpose of this analysis is to build a model that predicts the propensity of customers to churn, based on the analysis of other attributes that concern a customer. 
+
+## Client
+A telecommunication company will be the intended client, as they need to formulate an effective strategy for managing customer churn.
+
+The company would want to know the customer attributes and the relationship among these, which most likely would drive a customer to churn. This would allow the company to form business strategies centered around these factors, to prevent a customer from leaving.
+
+In addition, the ability to predict whether a selected customer will churn, can cause the company to take actions (such as offering a better deal), in order to retain the customer.
+
+## Data
+
+The data for this project comes from the data made available as a part of *KDD Cup 2009: Customer Relationship prediction*.
+
+* [Train Data](http://www.kdd.org/cupfiles/KDDCupData/2009/orange_small_train.data.zip)
+* [Test Data](http://www.kdd.org/cupfiles/KDDCupData/2009/orange_small_test.data.zip)
+* [Train Churn Labels](http://www.kdd.org/cupfiles/KDDCupData/2009/files/orange_small_train_churn.labels)
+
+## Approach
+
+As this problem aims to predict a binary variable "churn" (~Yes/No), a logistic regression model will be applied. This step follows the usual data wrangling, and exploratory data analysis stages, to deal with missing values, outliers and multi-collinearity among the predictor variables.
+
+## Deliverables
+
+A full report detailing the process undertaken to complete this analysis will be uploaded to GitHub with R code included.
