@@ -4,7 +4,6 @@ author: "Aadrika Singh"
 date: "September 27, 2017"
 output: html_document
 ---
-
 ## Importing dataset
 
 ```{r eval=FALSE}
@@ -15,7 +14,11 @@ telco <- as.data.frame(read.delim("Dataset/orange_small_train.data", na.strings=
 telco$churn <- as.factor(read.table("Dataset/orange_small_train_churn.txt")$V1)
 ```
 
-There are *50,000* observations of *230* variables in the dataset, from which selected input features will be used to predict the outcome variable **churn**. From the dataset description, we know that the first *190* variables are **numerical** and the last *40* are **categorical**.
+```{r}
+dim(telco)
+```
+
+There are *50,000* observations of *230* variables in the dataset, from which selected input features will be used to predict the outcome or 231st variable **churn**. From the dataset description, we know that the first *190* variables are **numerical** and the rest of the *40* are **categorical**.
 
 ## Cleaning the dataset
 
@@ -26,29 +29,25 @@ library(ggplot2)
 
 # Looking at the proportion of missing values in the remaining columns
 checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
+```
 
+```{r}
 # Plotting a histogram of the proportion of missing values
 hist(checkNA)
 ```
 
-As observed from the histogram, I'll remove the ones where more than 20% of the data is missing (some of the columns have 100% missing data, and otherwise, there are not many variables with more than 20% missing values), as these variables will not contribute much towards the final goal of prediction.
+As observed from the histogram, I'll remove the columns where more than 20% of the data is missing (some of the columns have 100% missing data, and otherwise, there are not many variables with more than 20% missing values), as these variables will not contribute much towards the final goal of prediction.
 
 ```{r eval=FALSE}
 # Removing the columns which have more than 20% NA values
 telco <- telco[, checkNA <= 0.2]
 ```
 
-The dataset now has only *67* variables, all of which have **less than 20%** missing data.
-
-For categorical variables, all the variables with more than 50 factor levels have been removed.
-
-```{r eval=FALSE}
-for(i in colnames(telco)[39:66]){
-  if(length(levels(telco[[i]])) > 50) {
-   telco[[i]] <- NULL
-   }
- }
+```{r}
+dim(telco)
 ```
+
+The dataset now has only *67* variables, all of which have **less than 20%** missing data.
 
 Removing variable with near-zero variance, as they may not be useful for discriminating classes.
 
@@ -57,17 +56,26 @@ library(caret)
 
 # Get indices of columns with low variance
 badCols <- nearZeroVar(telco)
-print(paste("Fraction of nearZeroVar columns:", round(length(badCols)/length(telco),4)))
+```
 
+```{r}
+print(paste("Fraction of nearZeroVar columns:", round(length(badCols)/length(telco),4)))
+```
+
+```{r eval=FALSE}
 # Remove columns from dataset
 telco <- telco[, -badCols]
 ```
 
-The dataset now has *45* variables.
+```{r}
+dim(telco)
+```
+
+The dataset now has *57* variables.
 
 ```{r eval=FALSE}
 # Replacing the column names to be in proper order
-names(telco)[1:44] <- paste("V", 1:44, sep = "")
+names(telco)[1:56] <- paste("V", 1:56, sep = "")
 
 # Replacing -1 with 0 for churn variable
 levels(telco$churn)[telco$churn == "-1"] <- "0"
@@ -89,8 +97,13 @@ set.seed(144)
 
 # Identify the variables that have no missing values, to remove them from the imputation
 checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
-names(telco[, checkNA == 0])
+```
 
+```{r}
+names(telco[, checkNA == 0])
+```
+
+```{r eval=FALSE}
 # Analyze summary for numerical variables
 summary(subset(telco, select = colnames(telco)[1:11]))
 summary(subset(telco, select = colnames(telco)[12:22]))
@@ -100,30 +113,35 @@ summary(subset(telco, select = colnames(telco)[23:32]))
 f <- aregImpute(~V1+V2+V3+V4+V5+V6+V7+V8+V10+V14+V15+V16+V17+V18+V19+V20+V22+V23+V24+V26+V27+V28+V29+V30+V31+V32, data = telco, n.impute = 5)
 # Get the imputed values
 imputed <-impute.transcan(f, data=telco, imputation=1, list.out=TRUE, pr=FALSE, check=FALSE)
-# convert the list to the database
+# Convert the list to the database
 imputed.data <- as.data.frame(do.call(cbind,imputed))
-# arrange the columns accordingly
+# Arrange the columns accordingly
 imputed.data <- imputed.data[, colnames(telco)[c(1,2,3,4,5,6,7,8,10,14,15,16,17,18,19,20,22,23,24,26,27,28,29,30,31,32)], drop = FALSE]
-# update the dataset
+# Update the dataset
 for(i in colnames(telco)[c(1,2,3,4,5,6,7,8,10,14,15,16,17,18,19,20,22,23,24,26,27,28,29,30,31,32)]){
  telco[[i]] <- imputed.data[[i]]
 }
 
-# Dealing with missing values for categorical variables
-for(i in colnames(telco)[33:44]){
+# Dealing with missing values for categorical variables - adding the level "Unknown"
+for(i in colnames(telco)[33:56]){
  levels(telco[[i]]) <- c(levels(telco[[i]]), "Unknown") 
  telco[[i]][is.na(telco[[i]])] <- "Unknown"
 }
 
 # Drop unused levels
-for(i in colnames(telco)[33:44]){
+for(i in colnames(telco)[33:56]){
  telco[[i]] <- droplevels(telco[[i]])
 }
 
 # Identify the variables that have missing values, to fill the missing values
 checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
-names(telco[, checkNA != 0])
+```
 
+```{r}
+names(telco[, checkNA != 0])
+```
+
+```{r eval=FALSE}
 # Function to replace NA values with median of the column
 replaceMed <- function(x){ifelse(is.na(x), median(x, na.rm = TRUE), x)}
 
@@ -134,7 +152,13 @@ for(i in colnames(telco)[c(9,12,25)]){
 
 # Ensuring that no variable has a missing value anymore
 checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
-names(telco[, checkNA != 0])
+```
 
+```{r}
+names(telco[, checkNA != 0])
+```
+
+```{r eval=FALSE}
 # Exporting the clean data set to a CSV file
 write.csv(x = telco, file = "telcoClean.csv")
+```
