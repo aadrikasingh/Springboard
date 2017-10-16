@@ -4,9 +4,10 @@ author: "Aadrika Singh"
 date: "September 27, 2017"
 output: html_document
 ---
+
 ## Importing dataset
 
-```{r eval=FALSE}
+```{r results='hide'}
 # Reading the dataset ; reading all blanks as NA
 telco <- as.data.frame(read.delim("Dataset/orange_small_train.data", na.strings=c("","NA"), header=TRUE, sep="\t", fill=TRUE))
 
@@ -24,7 +25,7 @@ There are *50,000* observations of *230* variables in the dataset, from which se
 
 As observed, there are a lot of *missing values* in the dataset. To tackle this situation, I'll look at the proportion of missing values in the columns.
 
-```{r eval=FALSE}
+```{r results='hide'}
 library(ggplot2)
 
 # Looking at the proportion of missing values in the remaining columns
@@ -38,7 +39,7 @@ hist(checkNA)
 
 As observed from the histogram, I'll remove the columns where more than 20% of the data is missing (some of the columns have 100% missing data, and otherwise, there are not many variables with more than 20% missing values), as these variables will not contribute much towards the final goal of prediction.
 
-```{r eval=FALSE}
+```{r results='hide'}
 # Removing the columns which have more than 20% NA values
 telco <- telco[, checkNA <= 0.2]
 ```
@@ -51,7 +52,7 @@ The dataset now has only *67* variables, all of which have **less than 20%** mis
 
 Removing variable with near-zero variance, as they may not be useful for discriminating classes.
 
-```{r eval=FALSE}
+```{r results='hide'}
 library(caret)
 
 # Get indices of columns with low variance
@@ -62,7 +63,7 @@ badCols <- nearZeroVar(telco)
 print(paste("Fraction of nearZeroVar columns:", round(length(badCols)/length(telco),4)))
 ```
 
-```{r eval=FALSE}
+```{r results='hide'}
 # Remove columns from dataset
 telco <- telco[, -badCols]
 ```
@@ -73,7 +74,7 @@ dim(telco)
 
 The dataset now has *57* variables.
 
-```{r eval=FALSE}
+```{r results='hide'}
 # Replacing the column names to be in proper order
 names(telco)[1:56] <- paste("V", 1:56, sep = "")
 
@@ -91,7 +92,7 @@ I am using **Hmisc** package for imputing the missing values for numerical varia
 
 For categorical variables, all the NA values will be replaced by another factor level called "Unknown".
 
-```{r eval=FALSE}
+```{r results='hide'}
 library(Hmisc)
 set.seed(144)
 
@@ -103,7 +104,7 @@ checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
 names(telco[, checkNA == 0])
 ```
 
-```{r eval=FALSE}
+```{r results='hide'}
 # Analyze summary for numerical variables
 summary(subset(telco, select = colnames(telco)[1:11]))
 summary(subset(telco, select = colnames(telco)[12:22]))
@@ -141,7 +142,7 @@ checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
 names(telco[, checkNA != 0])
 ```
 
-```{r eval=FALSE}
+```{r results='hide'}
 # Function to replace NA values with median of the column
 replaceMed <- function(x){ifelse(is.na(x), median(x, na.rm = TRUE), x)}
 
@@ -158,7 +159,7 @@ checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
 names(telco[, checkNA != 0])
 ```
 
-```{r eval=FALSE}
+```{r results='hide'}
 # Exporting the clean data set to a CSV file
 write.csv(x = telco, file = "telcoClean.csv")
 ```
