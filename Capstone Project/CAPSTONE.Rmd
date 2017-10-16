@@ -1,13 +1,15 @@
 ---
-title: "CAPSTONE"
+title: "CAPSTONE PROJECT"
 author: "Aadrika Singh"
 date: "September 27, 2017"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ## Importing dataset
 
-```{r eval=FALSE}
+```{r results='hide'}
 # Reading the dataset ; reading all blanks as NA
 telco <- as.data.frame(read.delim("Dataset/orange_small_train.data", na.strings=c("","NA"), header=TRUE, sep="\t", fill=TRUE))
 
@@ -15,59 +17,68 @@ telco <- as.data.frame(read.delim("Dataset/orange_small_train.data", na.strings=
 telco$churn <- as.factor(read.table("Dataset/orange_small_train_churn.txt")$V1)
 ```
 
-There are *50,000* observations of *230* variables in the dataset, from which selected input features will be used to predict the outcome variable **churn**. From the dataset description, we know that the first *190* variables are **numerical** and the last *40* are **categorical**.
+```{r}
+dim(telco)
+```
+
+There are *50,000* observations of *230* variables in the dataset, from which selected input features will be used to predict the outcome or 231st variable **churn**. From the dataset description, we know that the first *190* variables are **numerical** and the rest of the *40* are **categorical**.
 
 ## Cleaning the dataset
 
 As observed, there are a lot of *missing values* in the dataset. To tackle this situation, I'll look at the proportion of missing values in the columns.
 
-```{r eval=FALSE}
+```{r results='hide'}
 library(ggplot2)
 
 # Looking at the proportion of missing values in the remaining columns
 checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
+```
 
+```{r}
 # Plotting a histogram of the proportion of missing values
 hist(checkNA)
 ```
 
-As observed from the histogram, I'll remove the ones where more than 20% of the data is missing (some of the columns have 100% missing data, and otherwise, there are not many variables with more than 20% missing values), as these variables will not contribute much towards the final goal of prediction.
+As observed from the histogram, I'll remove the columns where more than 20% of the data is missing (some of the columns have 100% missing data, and otherwise, there are not many variables with more than 20% missing values), as these variables will not contribute much towards the final goal of prediction.
 
-```{r eval=FALSE}
+```{r results='hide'}
 # Removing the columns which have more than 20% NA values
 telco <- telco[, checkNA <= 0.2]
 ```
 
-The dataset now has only *67* variables, all of which have **less than 20%** missing data.
-
-For categorical variables, all the variables with more than 50 factor levels have been removed.
-
-```{r eval=FALSE}
-for(i in colnames(telco)[39:66]){
-  if(length(levels(telco[[i]])) > 50) {
-   telco[[i]] <- NULL
-   }
- }
+```{r}
+dim(telco)
 ```
+
+The dataset now has only *67* variables, all of which have **less than 20%** missing data.
 
 Removing variable with near-zero variance, as they may not be useful for discriminating classes.
 
-```{r eval=FALSE}
+```{r results='hide'}
 library(caret)
 
 # Get indices of columns with low variance
 badCols <- nearZeroVar(telco)
-print(paste("Fraction of nearZeroVar columns:", round(length(badCols)/length(telco),4)))
+```
 
+```{r}
+print(paste("Fraction of nearZeroVar columns:", round(length(badCols)/length(telco),4)))
+```
+
+```{r results='hide'}
 # Remove columns from dataset
 telco <- telco[, -badCols]
 ```
 
-The dataset now has *45* variables.
+```{r}
+dim(telco)
+```
 
-```{r eval=FALSE}
+The dataset now has *57* variables.
+
+```{r results='hide'}
 # Replacing the column names to be in proper order
-names(telco)[1:44] <- paste("V", 1:44, sep = "")
+names(telco)[1:56] <- paste("V", 1:56, sep = "")
 
 # Replacing -1 with 0 for churn variable
 levels(telco$churn)[telco$churn == "-1"] <- "0"
@@ -83,14 +94,19 @@ I am using **Hmisc** package for imputing the missing values for numerical varia
 
 For categorical variables, all the NA values will be replaced by another factor level called "Unknown".
 
-```{r eval=FALSE}
+```{r results='hide'}
 library(Hmisc)
 set.seed(144)
 
 # Identify the variables that have no missing values, to remove them from the imputation
 checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
-names(telco[, checkNA == 0])
+```
 
+```{r}
+names(telco[, checkNA == 0])
+```
+
+```{r results='hide'}
 # Analyze summary for numerical variables
 summary(subset(telco, select = colnames(telco)[1:11]))
 summary(subset(telco, select = colnames(telco)[12:22]))
@@ -100,30 +116,35 @@ summary(subset(telco, select = colnames(telco)[23:32]))
 f <- aregImpute(~V1+V2+V3+V4+V5+V6+V7+V8+V10+V14+V15+V16+V17+V18+V19+V20+V22+V23+V24+V26+V27+V28+V29+V30+V31+V32, data = telco, n.impute = 5)
 # Get the imputed values
 imputed <-impute.transcan(f, data=telco, imputation=1, list.out=TRUE, pr=FALSE, check=FALSE)
-# convert the list to the database
+# Convert the list to the database
 imputed.data <- as.data.frame(do.call(cbind,imputed))
-# arrange the columns accordingly
+# Arrange the columns accordingly
 imputed.data <- imputed.data[, colnames(telco)[c(1,2,3,4,5,6,7,8,10,14,15,16,17,18,19,20,22,23,24,26,27,28,29,30,31,32)], drop = FALSE]
-# update the dataset
+# Update the dataset
 for(i in colnames(telco)[c(1,2,3,4,5,6,7,8,10,14,15,16,17,18,19,20,22,23,24,26,27,28,29,30,31,32)]){
  telco[[i]] <- imputed.data[[i]]
 }
 
-# Dealing with missing values for categorical variables
-for(i in colnames(telco)[33:44]){
+# Dealing with missing values for categorical variables - adding the level "Unknown"
+for(i in colnames(telco)[33:56]){
  levels(telco[[i]]) <- c(levels(telco[[i]]), "Unknown") 
  telco[[i]][is.na(telco[[i]])] <- "Unknown"
 }
 
 # Drop unused levels
-for(i in colnames(telco)[33:44]){
+for(i in colnames(telco)[33:56]){
  telco[[i]] <- droplevels(telco[[i]])
 }
 
 # Identify the variables that have missing values, to fill the missing values
 checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
-names(telco[, checkNA != 0])
+```
 
+```{r}
+names(telco[, checkNA != 0])
+```
+
+```{r results='hide'}
 # Function to replace NA values with median of the column
 replaceMed <- function(x){ifelse(is.na(x), median(x, na.rm = TRUE), x)}
 
@@ -134,193 +155,113 @@ for(i in colnames(telco)[c(9,12,25)]){
 
 # Ensuring that no variable has a missing value anymore
 checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
-names(telco[, checkNA != 0])
+```
 
+```{r}
+names(telco[, checkNA != 0])
+```
+
+```{r results='hide'}
 # Exporting the clean data set to a CSV file
 write.csv(x = telco, file = "telcoClean.csv")
 ```
 
-## Exploratory Data Analysis
-```{r eval=FALSE}
-library(ggplot2)
-library(lattice)
-library(vcd)
-library(corrplot)
-library(scales)
-library("MASS")
-library(psych)
-library(lsr)
-
-# Examining the number of people who churned
-ggplot(aes(x = churn), data = telco) +
-  geom_bar(aes(y = ..count../ sum(..count..), fill = factor(..x..)), stat = "count")+
-    geom_text(aes(label = (..count../ sum(..count..))*100, y= ..prop..), stat= "count") +
-    labs(y = "Percent", x = "Churn", fill = "Churn") +
-    scale_y_continuous(labels=percent)
-
-# Examining the correlations between numerical variables
-corrplot(cor(telco[, 1:32]))
-
-# Examining the correlations between categorical variables using scatter plot matrix(SPLOM)
-p <- pairs.panels(telco[,33:45]) 
-p
-
-# Assuming that correlations greater than 0.2 or less than -0.2 are significant:
-# V33 and V37 : (0.84)
-# V36 and V43 : (-0.22)
-# V36 and V44: (-0.27)
-# V40 and V44: (-0.25)
-# V43 and V44: (-0.21)
-# We also observe that the target variable churn has almost zero correlation with all the other categorical variables
-
-# Using Cramer's V as a measure of association for nominal variables[0:no association between the variables to 1:complete association]
-# Strong association as observed
-cramersV(telco$V33, telco$V37)
-cramersV(telco$V36, telco$V43)
-
-# Weak association as observed
-cramersV(telco$churn, telco$V34)
-cramersV(telco$churn, telco$V35)
-
-mosaic(~churn + V38, data=telco, main = "Customer Churn", shade = TRUE, legend = TRUE)
-
-```
-
 ## Machine Learning
 
-```{r eval=FALSE}
+```{r results='hide'}
 # Splitting the dataset into training and test sets
 library(caTools)
 split <- sample.split(telco$churn, SplitRatio = 0.75)
 train <- subset(telco, split == TRUE)
 test <- subset(telco, split == FALSE)
-
-########### Logistic Regression ###########
-library(car)
-vnam <- paste("V",1:44, sep = "")
-fmla <- as.formula(paste("churn ~ ", paste(vnam, collapse = "+")))
-linmod <- glm(fmla, data = train, family = binomial)
-summary(linmod)
-# AIC : 18882
-
-# Get variables causing aliased coefficients to remove them from VIF analysis
-attributes(alias(linmod)$Complete)$dimnames[[1]]
-
-# Fit new model removing the aliased coefficients
-fit.new <-glm(churn ~ V1+V2+V3+V4+V5+V6+V7+V8+V9+V10+V11+V12+V13+V14+V15+V16+V17+V18+V19+V20+V21+V22+V23+V24+V25+V26+V27+V28+V29+V30+V31+V32+V33+V34+V35+V36+V38+V39+V40+V41+V42+V44, data = train, family = binomial)
-summary(fit.new)
-# AIC : 18885
-
-# Find VIF values for the new model
-vif(fit.new)
-
-#===============================================================================================================#
-## Reiterate : remove variable with highest VIF(upto a threshold of 5), fit the new model and observe the AIC value ##
-
-# Remove V5
-fit.new <-glm(churn ~ V1+V2+V3+V4+V6+V7+V8+V9+V10+V11+V12+V13+V14+V15+V16+V17+V18+V19+V20+V21+V22+V23+V24+V25+V26+V27+V28+V29+V30+V31+V32+V33+V34+V35+V36+V38+V39+V40+V41+V42+V44, data = train, family = binomial)
-summary(fit.new)
-vif(fit.new)
-# AIC : 18884
-
-# Remove V36
-fit.new <-glm(churn ~ V1+V2+V3+V4+V6+V7+V8+V9+V10+V11+V12+V13+V14+V15+V16+V17+V18+V19+V20+V21+V22+V23+V24+V25+V26+V27+V28+V29+V30+V31+V32+V33+V34+V35+V38+V39+V40+V41+V42+V44, data = train, family = binomial)
-summary(fit.new)
-vif(fit.new)
-# AIC : 18871
-
-# Remove V4
-fit.new <-glm(churn ~ V1+V2+V3+V6+V7+V8+V9+V10+V11+V12+V13+V14+V15+V16+V17+V18+V19+V20+V21+V22+V23+V24+V25+V26+V27+V28+V29+V30+V31+V32+V33+V34+V35+V38+V39+V40+V41+V42+V44, data = train, family = binomial)
-summary(fit.new)
-vif(fit.new)
-# AIC : 18873
-
-# Remove V44
-fit.new <-glm(churn ~ V1+V2+V3+V6+V7+V8+V9+V10+V11+V12+V13+V14+V15+V16+V17+V18+V19+V20+V21+V22+V23+V24+V25+V26+V27+V28+V29+V30+V31+V32+V33+V34+V35+V38+V39+V40+V41+V42, data = train, family = binomial)
-summary(fit.new)
-vif(fit.new)
-# AIC : 18841
-
-# Remove V32
-fit.new <-glm(churn ~ V1+V2+V3+V6+V7+V8+V9+V10+V11+V12+V13+V14+V15+V16+V17+V18+V19+V20+V21+V22+V23+V24+V25+V26+V27+V28+V29+V30+V31+V33+V34+V35+V38+V39+V40+V41+V42, data = train, family = binomial)
-summary(fit.new)
-vif(fit.new)
-# AIC : 18839
-
-# Remove V30
-fit.new <-glm(churn ~ V1+V2+V3+V6+V7+V8+V9+V10+V11+V12+V13+V14+V15+V16+V17+V18+V19+V20+V21+V22+V23+V24+V25+V26+V27+V28+V29+V31+V33+V34+V35+V38+V39+V40+V41+V42, data = train, family = binomial)
-summary(fit.new)
-vif(fit.new)
-# AIC : 18840
-
-# Remove V35
-fit.new <-glm(churn ~ V1+V2+V3+V6+V7+V8+V9+V10+V11+V12+V13+V14+V15+V16+V17+V18+V19+V20+V21+V22+V23+V24+V25+V26+V27+V28+V29+V31+V33+V34+V38+V39+V40+V41+V42, data = train, family = binomial)
-summary(fit.new)
-vif(fit.new)
-# AIC : 18839
-#===============================================================================================================#
-
-# Add back the variables that cause aliased coefficients and observe the AIC value (V37)
-fit.new <-glm(churn ~ V1+V2+V3+V6+V7+V8+V9+V10+V11+V12+V13+V14+V15+V16+V17+V18+V19+V20+V21+V22+V23+V24+V25+V26+V27+V28+V29+V31+V33+V34+V38+V39+V40+V41+V42+V37, data = train, family = binomial)
-summary(fit.new)
-# AIC : 18840
-
-# Add back the variables that cause aliased coefficients and observe the AIC value (V43)
-fit.new <-glm(churn ~ V1+V2+V3+V6+V7+V8+V9+V10+V11+V12+V13+V14+V15+V16+V17+V18+V19+V20+V21+V22+V23+V24+V25+V26+V27+V28+V29+V31+V33+V34+V38+V39+V40+V41+V42+V43, data = train, family = binomial)
-summary(fit.new)
-# AIC : 18832
-# Adding only V43
-
-# Add back the variables that caused AIC value to increase (V4)
-fit.new <-glm(churn ~ V1+V2+V3+V6+V7+V8+V9+V10+V11+V12+V13+V14+V15+V16+V17+V18+V19+V20+V21+V22+V23+V24+V25+V26+V27+V28+V29+V31+V33+V34+V38+V39+V40+V41+V42+V43+V4, data = train, family = binomial)
-summary(fit.new)
-# AIC : 18829
-
-# Add back the variables that caused AIC value to increase (V30)
-fit.new <-glm(churn ~ V1+V2+V3+V6+V7+V8+V9+V10+V11+V12+V13+V14+V15+V16+V17+V18+V19+V20+V21+V22+V23+V24+V25+V26+V27+V28+V29+V31+V33+V34+V38+V39+V40+V41+V42+V43+V4+V30, data = train, family = binomial)
-summary(fit.new)
-# AIC : 18828
-# Doesn't cause the VIF to decrease significantly so removed anyway
-
-# Final logistic regression model obtained after VIF analysis
-fit.new <-glm(churn ~ V1+V2+V3+V6+V7+V8+V9+V10+V11+V12+V13+V14+V15+V16+V17+V18+V19+V20+V21+V22+V23+V24+V25+V26+V27+V28+V29+V31+V33+V34+V38+V39+V40+V41+V42+V43+V4, data = train, family = binomial)
-summary(fit.new)
-# AIC : 18829
-
-# Removing the variables based on significant codes and keeping only the significant variables in the model
-fit.new <-glm(churn ~ V2+V8+V10+V13+V14+V16+V21+V26+V34+V38+V39+V40+V43, data = train, family = binomial)
-summary(fit.new)
-# AIC : 18810
 ```
 
-```{r}
-# Prediction using the model, on the test set
-pred = predict(fit.new, newdata = test, type = "response")
-table(test$churn, pred > 0.5)
-```
-The model predicted that 12,498 customers will not churn, however 916 of them churned!
-Chances of predicting that a given customer will not churn but the customer infact churns, is 7.4%.
-On other hand, the model predicted that 2 of the customers will churn, and the 2 of them infact churned, shows that the model is confident about the customers who it predict will churn.
-The overall accuracy of the model is 92.6%.
-
-```{r eval=FALSE}
+```{r results='hide'}
 ########### Random Forests ###########
-# Simple random forest
 library(randomForest)
-library(party)
 library(plyr)
-RFmod <- randomForest( x=train[, 1:(ncol(train)-1)] , y=train[ , ncol(train)] , ntree=500, importance = TRUE )
-RFmod_imp <- as.data.frame( RFmod$importance )
-RFmod_imp$features <- rownames( RFmod_imp )
-RFmod_imp_sorted <- arrange( RFmod_imp  , desc(MeanDecreaseAccuracy)  )
-barplot(RFmod_imp_sorted$MeanDecreaseAccuracy, ylab="Variable Importance")
-train_top <- train[ , RFmod_imp_sorted[1:10,"features"] ]  
-RFmod_top <- randomForest( x=train_top , y=train[ , ncol(train)] , ntree=500, importance = TRUE )  
-RFmod_top
+
+# Since randomForest can't handle categorical predictors with more than 53 categories :
+trainRF <- train
+for(i in colnames(trainRF)[33:56]){
+  if(length(levels(trainRF[[i]])) > 50) {
+   trainRF[[i]] <- NULL
+   }
+}
+
+testRF <- test
+for(i in colnames(testRF)[33:56]){
+  if(length(levels(testRF[[i]])) > 50) {
+   testRF[[i]] <- NULL
+   }
+ }
+
+# Fit the random Forest model using all variables
+RFmod <- randomForest(factor(churn)~.,data = trainRF)
+
+# Confusion matrix for prediction 
+table(predict(object = RFmod, test), test$churn)
 ```
 
 ```{r}
-# Prediction using the model, on the test set
-predRF = predict(RFmod_top, newdata = test)
-table(predRF, test$churn)
+# Use varImpPlot to select top 10 variables
+varImpPlot(RFmod)
+```
+
+```{r results='hide'}
+# Top 10 variables : V54, V21, V11, V16, V1, V30, V8, V26, V22, V27
+# Remove the trainRF and testRF datasets
+rm(trainRF)
+rm(testRF)
+
+# Set up parallel computation
+library(doParallel)
+cl <- makeCluster(2)
+registerDoParallel(cl)
+
+# Specify the type of resampling
+fitControl <- trainControl(method = "repeatedcv",
+                           number = 5,
+                           repeats = 3,
+                           summaryFunction = prSummary,
+                           classProbs = TRUE,
+                           allowParallel = TRUE)
+
+set.seed(825)
+
+# Fit the random forest model with the selected 10 variables
+rfFit1 <- train(train[,c("V54", "V21", "V11", "V16", "V1", "V30", "V8", "V26", "V22", "V27")],
+                train[,"churn"],
+                data = train,
+                method = "rf",
+                trControl = fitControl,
+                metric = "F"
+                )
+
+rfFit1
+
+# Confusion matrix
+confusionMatrix(predict.train(rfFit1, test, type = "raw"), test$churn)
+
+# Stop parallel computation
+stopCluster(cl)
+registerDoSEQ()
+
+```
+
+
+```{r results='hide'}
+########### LASSO ###########
+# lassoFit2 <- train(train[,-"churn"], train[,"churn"],
+#                 data = train,
+#                 method = "glmnet",
+#                 trControl = fitControl,
+#                 metric = "F",
+#                 tuneGrid=expand.grid(
+#                   .alpha=1,
+#                   .lambda=seq(0, 100, by = 0.1))
+#                 )
+
+########### FOBA ###########
+library(foba)
 ```
