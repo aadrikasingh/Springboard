@@ -1,0 +1,708 @@
+---
+title: "CAPSTONE PROJECT"
+author: "Aadrika Singh"
+date: "September 27, 2017"
+output:
+  html_document: default
+---
+
+## Load all required libraries
+
+```{r results='hide', message=FALSE, warning=FALSE}
+library(ggplot2)
+library(tidyr)
+library(caret)
+library(car)
+library(Hmisc)
+library(caTools)
+library(forcats)
+library(dplyr)
+library(lattice)
+library(vcd)
+library(corrplot)
+library(scales)
+library(MASS)
+library(psych)
+library(lsr)
+library(DMwR)
+library(xgboost)
+library(data.table)
+library(Matrix)
+library(randomForest)
+library(plyr)
+library(e1071)
+library(doParallel)
+library(ggthemes)
+library(GGally)
+library(gridExtra)
+```
+
+## Importing dataset
+
+```{r results='hide'}
+# Reading the dataset ; reading all blanks as NA
+telco <- as.data.frame(read.delim("Dataset/orange_small_train.data", na.strings=c("","NA"), header=TRUE, sep="\t", fill=TRUE))
+
+# Add the variable *churn* as a new column
+telco$churn <- as.factor(read.table("Dataset/orange_small_train_churn.txt")$V1)
+```
+
+```{r}
+dim(telco)
+head(telco)
+```
+
+There are *50,000* observations of *230* variables in the dataset, from which selected input features will be used to predict the outcome or 231st variable **churn**. From the dataset description, we know that the first *190* variables are **numerical** and the rest of the *40* are **categorical**.
+
+## Cleaning the dataset
+
+As observed, there are a lot of *missing values* in the dataset. To tackle this situation, I'll look at the proportion of missing values in the columns.
+
+```{r results='hide'}
+# Looking at the proportion of missing values in the remaining columns
+checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
+```
+
+```{r}
+# Plotting a histogram of the proportion of missing values
+hist(checkNA,
+     main = paste ("Histogram of the proportion of missing values"),
+     xlab = "Proportion of missing values",
+     ylab = "Count of variables",
+     labels = TRUE)
+```
+
+As observed from the histogram, I'll remove the columns where more than 20% of the data is missing (some of the columns have 100% missing data, and otherwise, there are not many variables with more than 20% missing values), as these variables will not contribute much towards the final goal of prediction.
+
+```{r results='hide'}
+# Removing the columns which have more than 20% NA values
+telco <- telco[, checkNA <= 0.2]
+```
+
+```{r}
+dim(telco)
+```
+
+The dataset now has only *67* variables, all of which have **less than 20%** missing data.
+
+Removing variable with near-zero variance (such as columns having a unique value), as they may not be useful for discriminating classes.
+
+```{r results='hide'}
+# Get indices of columns with low variance
+badCols <- nearZeroVar(telco)
+```
+
+```{r}
+print(paste("Fraction of nearZeroVar columns:", round(length(badCols)/length(telco),4)))
+```
+
+```{r results='hide'}
+# Remove columns from dataset
+telco <- telco[, -badCols]
+```
+
+```{r}
+dim(telco)
+```
+
+The dataset now has *57* variables.
+
+```{r results='hide'}
+# Renaming the column names to be in proper order
+names(telco)[1:56] <- paste("V", 1:56, sep = "")
+
+# Replacing -1 with 0 for churn variable
+levels(telco$churn)[telco$churn == "-1"] <- "0"
+
+# Relabel the churn variable
+telco$churn <- factor(telco$churn, levels=c('0', '1'),
+  labels=c('No', 'Yes'))
+```
+
+## Dealing with missing data
+
+I am using **Hmisc** package for imputing the missing values for numerical variables. I've excluded the variables that have no missing values, or are heavily skewed, to facilitate the imputation to run. For the variables that are excluded from the previous step, I'm using median imputation to fill in the missing values. 
+
+For categorical variables, all the NA values will be replaced by another factor level called "Unknown".
+
+```{r results='hide'}
+set.seed(144)
+
+# Identify the variables that have no missing values, to remove them from the imputation
+checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
+```
+
+```{r}
+names(telco[, checkNA == 0])
+```
+
+```{r}
+# Analyze summary for numerical variables
+summary(subset(telco, select = colnames(telco)[1:11]))
+summary(subset(telco, select = colnames(telco)[12:22]))
+summary(subset(telco, select = colnames(telco)[23:32]))
+```
+
+```{r results='hide'}
+# Use imputation 
+f <- aregImpute(~V1+V2+V3+V4+V5+V6+V7+V8+V10+V14+V15+V16+V17+V18+V19+V20+V22+V23+V24+V26+V27+V28+V29+V30+V31+V32, data = telco, n.impute = 5)
+# Get the imputed values
+imputed <-impute.transcan(f, data=telco, imputation=1, list.out=TRUE, pr=FALSE, check=FALSE)
+# Convert the list to the database
+imputed.data <- as.data.frame(do.call(cbind,imputed))
+# Arrange the columns accordingly
+imputed.data <- imputed.data[, colnames(telco)[c(1,2,3,4,5,6,7,8,10,14,15,16,17,18,19,20,22,23,24,26,27,28,29,30,31,32)], drop = FALSE]
+# Update the dataset
+for(i in colnames(telco)[c(1,2,3,4,5,6,7,8,10,14,15,16,17,18,19,20,22,23,24,26,27,28,29,30,31,32)]){
+ telco[[i]] <- imputed.data[[i]]
+}
+
+# Dealing with missing values for categorical variables - adding the level "Unknown"
+for(i in colnames(telco)[33:56]){
+ levels(telco[[i]]) <- c(levels(telco[[i]]), "Unknown") 
+ telco[[i]][is.na(telco[[i]])] <- "Unknown"
+}
+
+# Drop unused levels
+for(i in colnames(telco)[33:56]){
+ telco[[i]] <- droplevels(telco[[i]])
+}
+
+# Identify the variables that have missing values, to fill the missing values
+checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
+```
+
+```{r}
+names(telco[, checkNA != 0])
+```
+
+```{r results='hide'}
+# Function to replace NA values with median of the column
+replaceMed <- function(x){ifelse(is.na(x), median(x, na.rm = TRUE), x)}
+
+# Replacing the NA value in the columns with median of the column
+for(i in colnames(telco)[c(9,12,25)]){
+ telco[[i]] <- replaceMed(telco[[i]])
+}
+
+# Ensuring that no variable has a missing value anymore
+checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
+
+```
+
+```{r}
+names(telco[, checkNA != 0])
+```
+
+```{r results='hide'}
+# Exporting the clean data set to a CSV file
+write.csv(x = telco, file = "telcoClean.csv")
+```
+
+## Exploratory Data Analysis
+
+```{r}
+# Examining the number of people who churned
+ggplot(aes(x = churn, fill = churn), data = telco) +
+geom_bar(colour = "black", aes(y = ..count../ sum(..count..)), stat = "count") +
+ggtitle("Churn Analysis") +
+theme_fivethirtyeight() +
+xlab('Churn') +
+ylab('Percent') +
+theme(axis.title=element_text(size=12), legend.title = element_blank()) +
+geom_text(aes(label = (..count../ sum(..count..))*100, y= ..prop..), stat= "count") +
+scale_y_continuous(labels=percent)
+```
+
+As observed from the histogram, the percentage of people churning is significantly much lower than the percentage of people not churning. This also implies that the dataset is highly imbalanced.
+
+```{r results='hide'}
+# Examining the number of unique values for each numerical variable and factor levels for each categorical variable
+vec1 <- vector('character')
+vec2 <- vector('numeric')
+for(i in colnames(telco)[1:32])
+{
+  vec1 <- c(vec1, i)
+  vec2 <- c(vec2, length(unique(telco[[i]])))
+}
+for(i in colnames(telco)[33:56])
+{
+  vec1 <- c(vec1, i) 
+  vec2 <- c(vec2, length(levels(telco[[i]])))
+}
+df <- data.frame(vec1, vec2)
+rm(vec1)
+rm(vec2)
+```
+
+```{r}
+# Plotting the categorical variables against the number of factor levels
+ggplot(aes(x = vec1, y = vec2, fill = vec1), data = df[33:56,]) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label=vec2)) +
+  xlab("Variables") +
+  ylab("Factor Levels") +
+  ggtitle("Categorical variables - Factor levels") + 
+  theme_fivethirtyeight() +
+  theme(legend.position = "none", axis.title=element_text(size=12), 
+        axis.text.x = element_text(angle = 50))
+```
+
+```{r}
+# Some mosaic plots to see the relationship between categorical variables and churn
+mosaic(~churn + V44, data=telco, main = "Churn and V44", shade = TRUE, legend = TRUE)
+mosaic(~churn + V45, data=telco, main = "Churn and V45", shade = TRUE, legend = TRUE)
+mosaic(~churn + V49, data=telco, main = "Churn and V49", shade = TRUE, legend = TRUE)
+```
+
+We observe that V36, V50, and V52 have the same number of factor levels.
+Therefore, we observe the association among these variables using Cramer's V Rule. The Cramer's V value ranges between 0 to 1; 0 suggesting no/weak association and 1 suggesting a strong association between the two variables.
+
+```{r}
+# Finding Cramer's V value among V36, V50 and V52
+cramersV(telco$V36, telco$V50)
+cramersV(telco$V36, telco$V52)
+cramersV(telco$V50, telco$V52)
+```
+
+The variables have a very strong association with each other.
+
+```{r}
+# Combine the three variables into one and observe the number of factor levels
+telco$V365052 <- paste(telco$V36, telco$V50, sep=":")
+telco$V365052 <- paste(telco$V365052, telco$V52, sep=":")
+telco$V365052 <- factor(telco$V365052)
+length(levels(telco$V365052))
+
+# Since the newly merged column has the same number of factor levels, we remove the original variables
+telco$V36 <- NULL
+telco$V50 <- NULL
+telco$V52 <- NULL
+
+# Reorder variables
+telco <- telco[,c(1:53, 55, 54)]
+names(telco)[1:54] <- paste("V", 1:54, sep = "")
+
+# Cramer's V's association value for categorical variables with churn variables
+churnRel <- c(cramersV(telco$V33, telco$churn),
+cramersV(telco$V34, telco$churn),
+cramersV(telco$V35, telco$churn),
+cramersV(telco$V36, telco$churn),
+cramersV(telco$V37, telco$churn),
+cramersV(telco$V38, telco$churn),
+cramersV(telco$V39, telco$churn),
+cramersV(telco$V40, telco$churn),
+cramersV(telco$V41, telco$churn),
+cramersV(telco$V42, telco$churn),
+cramersV(telco$V43, telco$churn),
+cramersV(telco$V44, telco$churn),
+cramersV(telco$V45, telco$churn),
+cramersV(telco$V46, telco$churn),
+cramersV(telco$V47, telco$churn),
+cramersV(telco$V48, telco$churn),
+cramersV(telco$V49, telco$churn),
+cramersV(telco$V50, telco$churn),
+cramersV(telco$V51, telco$churn),
+cramersV(telco$V52, telco$churn),
+cramersV(telco$V53, telco$churn),
+cramersV(telco$V54, telco$churn))
+churnRel <- as.data.frame(churnRel)
+rownames(churnRel)[1:22] <- paste("V", 33:54, sep = "")
+
+# Filter the churnRel dataframe to find the variables that have a Cramer's V association value with churn variable, greater than 0.1
+churnRel <- subset(churnRel, churnRel >= 0.1)
+rownames(churnRel)
+
+# Remove the other categorical variables from the dataset and rename the variables
+telco <- telco[,c(1:32, 33, 36, 37, 46, 47, 54,55)]
+names(telco)[1:38] <- paste("V", 1:38, sep = "")
+```
+
+Since the variables were strongly associated, we merged them into one variable, and removed the original variables. The number of levels remain unchanged.
+
+```{r}
+# Plotting the numerical variables against the number of unique values
+ggplot(aes(x = vec1, y = vec2, fill = vec1), data = df[1:32,]) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label=vec2)) +
+  xlab("Variables") +
+  ylab("Unique values") +
+  ggtitle("Numerical variables - Unique Values") + 
+  theme_fivethirtyeight() +
+  theme(legend.position = "none", axis.title=element_text(size=12), 
+        axis.text.x = element_text(angle = 50))
+```
+
+Presence of collinearity among predictor variables(multi-collinearity) decreases the quality of predictor model and hence, we'll attempt to find this collinearity and remove those variables from these correlated variables that are less correlated to the predictor variable churn.
+
+```{r}
+# We observe that the variables V4, V5 have almost the same number of unique values
+with(telco, cor.test(V4,V5))
+
+ggplot(aes(x = V4, y = V5), data = telco) +
+  geom_point(alpha = 0.1) +
+  theme_fivethirtyeight() +
+  theme(axis.title=element_text(size=12)) +
+  xlab("V4") +
+  ylab("V5") +
+  stat_smooth() +
+  coord_cartesian(xlim = c(0, 2500), ylim = c(0, 2500))
+# V4 and V5 have a high correlation of almost 1
+```
+
+```{r}
+# We observe that the variables V1, V22 have almost the same number of unique values
+with(telco, cor.test(V1,V22))
+
+ggplot(aes(x = V1, y = V22), data = telco) +
+  geom_point(alpha = 0.1) +
+  theme_fivethirtyeight() +
+  theme(axis.title=element_text(size=12)) +
+  xlab("V1") +
+  ylab("V22") +
+  stat_smooth() +
+  coord_cartesian(xlim = c(0, 5000), ylim = c(0, 5000))
+# V1 and V22 also have a high correlation value of 0.74
+```
+
+```{r}
+# Correlation plot among the numerical variables
+m <- cor(telco[,1:32])  
+corrplot(m, type = "upper", order="hclust", method = "square", outline = T, tl.col = "indianred4", tl.cex = 0.8, cl.cex = 1.5, diag=FALSE)
+```
+
+```{r}
+# We observe that the variables V9, V25 are highly correlated amongst themeselves
+cor.test(telco$V9, telco$V25)
+
+ggplot(aes(x = V9, y = V25), data = telco) +
+  geom_point(alpha = 0.1) +
+  theme_fivethirtyeight() +
+  theme(axis.title=element_text(size=12)) +
+  xlab("V9") +
+  ylab("V25") +
+  stat_smooth() +
+  coord_cartesian(xlim = c(0, 60))
+
+# Observe the correlation of these variables with churn and keeping only the ones that have a higher correlation
+with(telco, cor.test(V9, as.numeric(churn)))
+with(telco, cor.test(V25, as.numeric(churn)))
+
+# Remove V25
+telco$V25 <- NULL
+```
+
+```{r}
+# We observe that the variables V29, V32 are highly correlated amongst themeselves
+cor.test(telco$V29, telco$V32)
+
+ggplot(aes(x = V29, y = V32), data = telco) +
+  geom_point(alpha = 0.1) +
+  theme_fivethirtyeight() +
+  theme(axis.title=element_text(size=12)) +
+  xlab("V29") +
+  ylab("V32") +
+  stat_smooth() +
+  scale_x_log10() +
+  scale_y_log10()  +
+  coord_cartesian(xlim = c(1000, 10000000), ylim = c(1000,10000000))
+
+# Observe the correlation of these variables with churn and keeping only the ones that have a higher correlation
+with(telco, cor.test(V29, as.numeric(churn)))
+with(telco, cor.test(V32, as.numeric(churn)))
+
+# Remove V32
+telco$V32 <- NULL
+```
+
+```{r}
+# We observe that the variables V1, V4, V5, V6, V7, V17, V18, V19, V20, V22, V23, V31 are highly correlated amonst themeselves
+ggpairs(telco, c("V1","V4","V5","V6","V7","V17","V18","V19","V20","V22","V23","V31"),
+        upper = list(continuous = wrap("cor", size = 4.75, alignPercent = 1))) +
+  theme_fivethirtyeight()
+
+# Observe the correlation of these variables with churn and keeping only the ones that have a higher correlation
+with(telco, cor.test(V1, as.numeric(churn)))
+with(telco, cor.test(V4, as.numeric(churn)))
+with(telco, cor.test(V5, as.numeric(churn)))
+with(telco, cor.test(V6, as.numeric(churn)))
+with(telco, cor.test(V7, as.numeric(churn)))
+with(telco, cor.test(V17, as.numeric(churn)))
+with(telco, cor.test(V18, as.numeric(churn)))
+with(telco, cor.test(V19, as.numeric(churn)))
+with(telco, cor.test(V20, as.numeric(churn)))
+with(telco, cor.test(V22, as.numeric(churn)))
+with(telco, cor.test(V23, as.numeric(churn)))
+with(telco, cor.test(V31, as.numeric(churn)))
+
+# Remove all but V1
+telco$V4 <- NULL
+telco$V5 <- NULL
+telco$V6 <- NULL
+telco$V7 <- NULL
+telco$V17 <- NULL
+telco$V18 <- NULL
+telco$V19 <- NULL
+telco$V20 <- NULL
+telco$V22 <- NULL
+telco$V23 <- NULL
+telco$V31 <- NULL
+```
+
+```{r}
+# We observe that the variables V2, V3, V12, V13, V28 are highly correlated amonst themeselves
+ggpairs(telco, c("V2", "V3", "V12", "V13", "V28"),
+        upper = list(continuous = wrap("cor", size = 4.75, alignPercent = 1))) +
+  theme_fivethirtyeight()
+
+# Observe the correlation of these variables with churn and keeping only the ones that have a higher correlation
+with(telco, cor.test(V2, as.numeric(churn)))
+with(telco, cor.test(V3, as.numeric(churn)))
+with(telco, cor.test(V12, as.numeric(churn)))
+with(telco, cor.test(V13, as.numeric(churn)))
+with(telco, cor.test(V28, as.numeric(churn)))
+
+# Remove all but V13
+telco$V2 <- NULL
+telco$V3 <- NULL
+telco$V12 <- NULL
+telco$V28 <- NULL
+```
+
+```{r}
+# We observe that the variables V8, V10, V15, V16, V26, V30 are highly correlated amonst themeselves
+ggpairs(telco, c("V8", "V10", "V15", "V16", "V26", "V30"),
+        upper = list(continuous = wrap("cor", size = 4.75, alignPercent = 1))) +
+  theme_fivethirtyeight()
+
+# Observe the correlation of these variables with churn 
+with(telco, cor.test(V8, as.numeric(churn)))
+with(telco, cor.test(V10, as.numeric(churn)))
+with(telco, cor.test(V15, as.numeric(churn)))
+with(telco, cor.test(V16, as.numeric(churn)))
+with(telco, cor.test(V26, as.numeric(churn)))
+with(telco, cor.test(V30, as.numeric(churn)))
+
+# Remove all but V16
+telco$V8 <- NULL
+telco$V10 <- NULL
+telco$V15 <- NULL
+telco$V26 <- NULL
+telco$V30 <- NULL
+
+# Rename the variables 
+names(telco)[1:16] <- paste("V", 1:16, sep = "")
+```
+
+## Machine Learning
+
+```{r results='hide'}
+# Splitting the dataset into training and test sets
+split <- sample.split(telco$churn, SplitRatio = 0.7)
+train <- subset(telco, split == TRUE)
+test <- subset(telco, split == FALSE)
+```
+
+As observed from the EDA, our dataset is imbalanced. Therefore, we use Synthetic Minority Over-Sampling Technique (SMOTE) to oversample the under-represented class and undersample the over-represented class.
+
+```{r}
+# Synthetic Minority Over - Sampling Technique (SMOTE)
+trainDF <- data.table(train, keep.rownames = F)
+trainDF <- SMOTE(form = churn ~ ., data = trainDF, perc.over = 300, perc.under = 150)
+
+# Examine the trainDF dataset
+ggplot(aes(x = churn, fill = churn), data = trainDF) +
+geom_bar(colour = "black", aes(y = ..count../ sum(..count..)), stat = "count") +
+ggtitle("Churn Analysis") +
+theme_fivethirtyeight() +
+xlab('Churn') +
+ylab('Percent') +
+theme(axis.title=element_text(size=12), legend.title = element_blank()) +
+geom_text(aes(label = (..count../ sum(..count..))*100, y= ..prop..), stat= "count") +
+scale_y_continuous(labels=percent)
+```
+
+We find that the dataset appears to be somewhat balanced after SMOTE.
+
+One-hot encoding is done on the trainDF dataset to convert the factor for each categorical variable into a binary variable.
+
+```{r}
+# One-hot encoding - Create a sparse matrix with categorical variables one-hot encoded
+sparse_matrix <- sparse.model.matrix(churn~.-1, data = trainDF)
+head(sparse_matrix)
+output_vector = trainDF[,churn] == "Yes"
+
+########### XGBoost Model ###########
+
+# Create a XGBoost model
+XGBmod <- xgboost(data = sparse_matrix, output_vector, nrounds = 10, objective = "binary:logistic")
+
+# Look at feature importance
+importance <- xgb.importance(feature_names = colnames(sparse_matrix), model = XGBmod)
+head(importance,10)
+
+# Plot feature importance plot to see important variables
+xgb.plot.importance(importance_matrix = importance)
+
+# Prediction on test set
+XGBPredMat <- as.matrix(table(test$churn, as.numeric(predict(XGBmod, xgb.DMatrix(sparse.model.matrix(churn~.-1, data = test))))>0.4))
+colnames(XGBPredMat) <- c("Will Not Churn", "Will Churn")
+rownames(XGBPredMat) <- c("Didn't Churn", "Churned")
+
+XGBPredMat
+```
+
+```{r}
+########### Random Forests ###########
+
+# Since randomForest can't handle categorical predictors with more than 53 categories :
+trainRF <- trainDF
+for(i in colnames(trainRF)[11:16]){
+  if(length(levels(trainRF[[i]])) > 50) {
+   trainRF[[i]] <- NULL
+   }
+}
+
+# Fit the random Forest model using all variables
+RFmod <- randomForest(factor(churn)~.,data = trainRF)
+
+# Confusion matrix for prediction 
+RFPredMat1 <- as.matrix(table(test$churn, predict(object = RFmod, test)))
+colnames(RFPredMat1) <- c("Will Not Churn", "Will Churn")
+rownames(RFPredMat1) <- c("Didn't Churn", "Churned")
+
+RFPredMat1
+```
+
+```{r}
+# Use varImpPlot to select top variables
+varImpPlot(RFmod)
+```
+
+```{r}
+
+# Set up parallel computation
+cl <- makeCluster(2)
+registerDoParallel(cl)
+
+# Specify the type of resampling
+fitControl <- trainControl(method = "repeatedcv",
+                           number = 5,
+                           repeats = 3,
+                           summaryFunction = prSummary,
+                           classProbs = TRUE,
+                           allowParallel = TRUE)
+
+set.seed(825)
+
+# Fit the random forest model with some of the top variables
+trainDF <- as.data.frame(trainDF)
+rfFit1 <- train(trainDF[,c(4, 6, 3, 7, 10, 1, 9)],
+                trainDF[,17],
+                data = trainDF,
+                method = "rf",
+                trControl = fitControl,
+                metric = "F"
+                )
+
+rfFit1
+
+# Confusion matrix
+RFPredMat2 <- as.matrix(table(test$churn, predict(object = rfFit1, test)))
+colnames(RFPredMat2) <- c("Will Not Churn", "Will Churn")
+rownames(RFPredMat2) <- c("Didn't Churn", "Churned")
+RFPredMat2 
+
+# Fit the random forest model with more of the top variables
+trainDF <- as.data.frame(trainDF)
+rfFit2 <- train(trainDF[,c(4, 6, 3, 7, 10, 1, 9, 8, 5)],
+                trainDF[,17],
+                data = trainDF,
+                method = "rf",
+                trControl = fitControl,
+                metric = "F"
+                )
+
+rfFit2
+
+# Confusion matrix
+RFPredMat3 <- as.matrix(table(test$churn, predict(object = rfFit2, test)))
+colnames(RFPredMat3) <- c("Will Not Churn", "Will Churn")
+rownames(RFPredMat3) <- c("Didn't Churn", "Churned")
+RFPredMat3
+
+# Stop parallel computation
+stopCluster(cl)
+registerDoSEQ()
+```
+
+## Comparison of the models based on prediction
+
+```{r}
+# Evaluate XG Boost Model
+P1 <- XGBPredMat[2,2]/(XGBPredMat[1,2] + XGBPredMat[2,2]) # Precision
+R1 <- XGBPredMat[2,2]/(XGBPredMat[2,1] + XGBPredMat[2,2]) # Recall
+F1 <- (2*P1*R1)/(P1 + R1)                                 # F-measure 
+A1 <- (XGBPredMat[1,1] + XGBPredMat[2,2])/sum(XGBPredMat) # Accuracy
+
+# Evaluate 1st Random Forest Model
+P2 <- RFPredMat1[2,2]/(RFPredMat1[1,2] + RFPredMat1[2,2]) # Precision
+R2 <- RFPredMat1[2,2]/(RFPredMat1[2,1] + RFPredMat1[2,2]) # Recall
+F2 <- (2*P2*R2)/(P2 + R2)                                 # F-measure 
+A2 <- (RFPredMat1[1,1] + RFPredMat1[2,2])/sum(RFPredMat1) # Accuracy
+
+# Evaluate 2nd Random Forest Model
+P3 <- RFPredMat2[2,2]/(RFPredMat2[1,2] + RFPredMat2[2,2]) # Precision
+R3 <- RFPredMat2[2,2]/(RFPredMat2[2,1] + RFPredMat2[2,2]) # Recall
+F3 <- (2*P3*R3)/(P3 + R3)                                 # F-measure 
+A3 <- (RFPredMat2[1,1] + RFPredMat2[2,2])/sum(RFPredMat2) # Accuracy
+
+# Evaluate 3rd Random Forest Model
+P4 <- RFPredMat3[2,2]/(RFPredMat3[1,2] + RFPredMat3[2,2]) # Precision
+R4 <- RFPredMat3[2,2]/(RFPredMat3[2,1] + RFPredMat3[2,2]) # Recall
+F4 <- (2*P4*R4)/(P4 + R4)                                 # F-measure 
+A4 <- (RFPredMat3[1,1] + RFPredMat3[2,2])/sum(RFPredMat3) # Accuracy
+
+modelEval <- data.frame(c(P1,P2,P3,P4),c(R1,R2,R3,R4),c(F1,F2,F3,F4),c(A1,A2,A3,A4))
+colnames(modelEval) <- c("Precision", "Recall", "Fmeasure", "Accuracy")
+modelEval$Model <- as.factor(c("XGB", "RF1", "RF2", "RF3"))
+modelEval <- modelEval[,c(5,1:4)]
+
+# Compare Precision of the models
+g1 <- ggplot(aes(x = Model, y = Precision, color = Model), data = modelEval) +
+  geom_point(size = 3) +
+  ggtitle("Precision - Comparison") +
+  theme_fivethirtyeight() + 
+  xlab('Model') +
+  ylab('Precision') +
+  theme(legend.position = "none")
+
+# Compare Recall of the models
+g2 <- ggplot(aes(x = Model, y = Recall, color = Model), data = modelEval) +
+  geom_point(size = 3) +
+  ggtitle("Recall - Comparison") +
+  theme_fivethirtyeight() + 
+  xlab('Model') +
+  ylab('Recall') +
+  theme(legend.position = "none")
+
+# Compare F - Measure of the models
+g3 <- ggplot(aes(x = Model, y = Fmeasure, color = Model), data = modelEval) +
+  geom_point(size = 3) +
+  ggtitle("F measure - Comparison") +
+  theme_fivethirtyeight() + 
+  xlab('Model') +
+  ylab('F - measure') +
+  theme(legend.position = "none")
+
+# Compare Accuracy of the models
+g4 <- ggplot(aes(x = Model, y = Accuracy, color = Model), data = modelEval) +
+  geom_point(size = 3) +
+  ggtitle("Accuracy - Comparison") +
+  theme_fivethirtyeight() + 
+  xlab('Model') +
+  ylab('Accuracy') +
+  theme(legend.position = "none")
+
+grid.arrange(g1,g2,g3,g4, ncol = 2)
+```
