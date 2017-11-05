@@ -1,11 +1,28 @@
 ---
 title: "Data Wrangling Report"
 author: "Aadrika Singh"
-date: "September 27, 2017"
-output: html_document
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    fig_width: 12
+    fig_height: 8
 ---
 
+## Load all required packages
+
+```{r results='hide', message=FALSE, warning=FALSE}
+library(ggplot2)
+library(caret)
+library(tidyr)
+library(Hmisc)
+library(dplyr)
+library(ggthemes)
+```
+
 ## Importing dataset
+
+The telecom company's dataset was imported as a data frame for churn analysis. The dataset includes several attributes (numerical as well as categorical) that contain information about the customers, and an attribute that specifies whether the customer churned or not.
 
 ```{r results='hide'}
 # Reading the dataset ; reading all blanks as NA
@@ -15,29 +32,37 @@ telco <- as.data.frame(read.delim("Dataset/orange_small_train.data", na.strings=
 telco$churn <- as.factor(read.table("Dataset/orange_small_train_churn.txt")$V1)
 ```
 
+Looking at the structure of the dataset:
+
 ```{r}
+# Dimensions of the dataset
 dim(telco)
+
+# First 6 rows of some of the columns
+head(tbl_df(telco))
 ```
 
-There are *50,000* observations of *230* variables in the dataset, from which selected input features will be used to predict the outcome or 231st variable **churn**. From the dataset description, we know that the first *190* variables are **numerical** and the rest of the *40* are **categorical**.
+There are *50,000* observations of *230* variables in the dataset, from which selected input features will be used to predict the outcome or 231st variable **churn**. From the dataset description, it is known that the first *190* variables are **numerical** and the rest of the *40* are **categorical**.
 
 ## Cleaning the dataset
 
-As observed, there are a lot of *missing values* in the dataset. To tackle this situation, I'll look at the proportion of missing values in the columns.
+As observed, there are a lot of *missing values* in the dataset. To tackle this situation, the proportion of missing values in the columns is observed, as the first step.
 
 ```{r results='hide'}
-library(ggplot2)
-
 # Looking at the proportion of missing values in the remaining columns
 checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
 ```
 
 ```{r}
 # Plotting a histogram of the proportion of missing values
-hist(checkNA)
+hist(checkNA,
+     main = paste ("Histogram of the proportion of missing values"),
+     xlab = "Proportion of missing values",
+     ylab = "Count of variables",
+     labels = TRUE)
 ```
 
-As observed from the histogram, I'll remove the columns where more than 20% of the data is missing (some of the columns have 100% missing data, and otherwise, there are not many variables with more than 20% missing values), as these variables will not contribute much towards the final goal of prediction.
+Based on the observations from the histogram, the columns where more than 20% of the data is missing, will be removed (most of the columns have more than 90% missing data, and otherwise, there are not many variables with missing values between 20% - 80%), as these variables will not contribute much towards the final goal of prediction.
 
 ```{r results='hide'}
 # Removing the columns which have more than 20% NA values
@@ -45,21 +70,21 @@ telco <- telco[, checkNA <= 0.2]
 ```
 
 ```{r}
+# Dimensions of the resulting dataset
 dim(telco)
 ```
 
 The dataset now has only *67* variables, all of which have **less than 20%** missing data.
 
-Removing variable with near-zero variance, as they may not be useful for discriminating classes.
+Removing variables with near-zero variance (such as columns having a unique value), as they may not be useful for discriminating classes.
 
 ```{r results='hide'}
-library(caret)
-
 # Get indices of columns with low variance
 badCols <- nearZeroVar(telco)
 ```
 
 ```{r}
+# Fraction of the total columns that have near-zero variance
 print(paste("Fraction of nearZeroVar columns:", round(length(badCols)/length(telco),4)))
 ```
 
@@ -69,31 +94,36 @@ telco <- telco[, -badCols]
 ```
 
 ```{r}
+# Dimensions of the resulting dataset
 dim(telco)
 ```
 
 The dataset now has *57* variables.
 
 ```{r results='hide'}
-# Replacing the column names to be in proper order
+# Renaming the column names to be in proper order
 names(telco)[1:56] <- paste("V", 1:56, sep = "")
 
 # Replacing -1 with 0 for churn variable
 levels(telco$churn)[telco$churn == "-1"] <- "0"
 
-# Relabel the churn variable
+# Relabel the churn variable as No/Yes instead of 0/1
 telco$churn <- factor(telco$churn, levels=c('0', '1'),
   labels=c('No', 'Yes'))
 ```
 
 ## Dealing with missing data
 
-I am using **Hmisc** package for imputing the missing values for numerical variables. I've excluded the variables that have no missing values, or are heavily skewed, to facilitate the imputation to run. For the variables that are excluded from the previous step, I'm using median imputation to fill in the missing values. 
+Since missing data values can create problems for analyzing data and creating predictive models, they need to be treated. Imputation is the process for substituting missing data. Simple/single imputation methods include replacing the missing value with the mean/median/mode of the variable. However, creating multiple imputations as compared to a single imputation (such as mean) takes care of uncertainty in missing values.
 
-For categorical variables, all the NA values will be replaced by another factor level called "Unknown".
+*Hmisc* package will be used for imputing the missing values for **numerical variables**. It allows mean imputation using additive regression, bootstrapping, and predictive mean matching. In bootstrapping, different bootstrap resamples are used for each of multiple imputations. Then, a flexible additive model (non parametric regression method) is fitted on samples taken with replacements from original data and missing values (acts as dependent variable) are predicted using non-missing values (independent variable).Then, it uses predictive mean matching (default) to impute missing values.
+
+The variables that have no missing values, or are heavily skewed, have been excluded, to facilitate the imputation to run. For the variables that are excluded from the previous step, median imputation will be used to fill in the missing values. 
+
+For **categorical variables**, all the NA values will be replaced by another factor level called "Unknown".
 
 ```{r results='hide'}
-library(Hmisc)
+# Set Seed
 set.seed(144)
 
 # Identify the variables that have no missing values, to remove them from the imputation
@@ -101,23 +131,34 @@ checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
 ```
 
 ```{r}
+# Names of the variables that have no missing values
 names(telco[, checkNA == 0])
 ```
 
-```{r results='hide'}
-# Analyze summary for numerical variables
+```{r}
+# Analyze summary for numerical variables - I
 summary(subset(telco, select = colnames(telco)[1:11]))
+# Analyze summary for numerical variables - II
 summary(subset(telco, select = colnames(telco)[12:22]))
+# Analyze summary for numerical variables - III
 summary(subset(telco, select = colnames(telco)[23:32]))
+```
 
+Applying multiple imputation for missing values in numerical variables and adding an "Unknown" factor level which replaces missing values in categorical variables:
+
+```{r results='hide'}
 # Use imputation 
 f <- aregImpute(~V1+V2+V3+V4+V5+V6+V7+V8+V10+V14+V15+V16+V17+V18+V19+V20+V22+V23+V24+V26+V27+V28+V29+V30+V31+V32, data = telco, n.impute = 5)
+
 # Get the imputed values
 imputed <-impute.transcan(f, data=telco, imputation=1, list.out=TRUE, pr=FALSE, check=FALSE)
+
 # Convert the list to the database
 imputed.data <- as.data.frame(do.call(cbind,imputed))
+
 # Arrange the columns accordingly
 imputed.data <- imputed.data[, colnames(telco)[c(1,2,3,4,5,6,7,8,10,14,15,16,17,18,19,20,22,23,24,26,27,28,29,30,31,32)], drop = FALSE]
+
 # Update the dataset
 for(i in colnames(telco)[c(1,2,3,4,5,6,7,8,10,14,15,16,17,18,19,20,22,23,24,26,27,28,29,30,31,32)]){
  telco[[i]] <- imputed.data[[i]]
@@ -139,8 +180,11 @@ checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
 ```
 
 ```{r}
+# Names of the variables that have may have missing values
 names(telco[, checkNA != 0])
 ```
+
+Applying mean (single) imputation for the remaining numerical variables:
 
 ```{r results='hide'}
 # Function to replace NA values with median of the column
@@ -156,8 +200,11 @@ checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
 ```
 
 ```{r}
+# Names of the variables that may have missing values
 names(telco[, checkNA != 0])
 ```
+
+Thus, the missing values for all the variables (numerical/categorical) have been imputed.
 
 ```{r results='hide'}
 # Exporting the clean data set to a CSV file
