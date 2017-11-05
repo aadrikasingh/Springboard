@@ -1,0 +1,424 @@
+---
+title: "Exploratory Data Analysis"
+author: "Aadrika Singh"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    fig_width: 12
+    fig_height: 8
+---
+
+```{r echo=FALSE}
+telco <- read.csv("telcoClean.csv", header = TRUE)
+telco <- telco[,2:58]
+```
+
+## Load all required packages
+
+```{r results='hide', message=FALSE, warning=FALSE}
+library(ggplot2)
+library(tidyr)
+library(caret)
+library(car)
+library(Hmisc)
+library(caTools)
+library(forcats)
+library(dplyr)
+library(lattice)
+library(vcd)
+library(corrplot)
+library(scales)
+library(MASS)
+library(psych)
+library(lsr)
+library(DMwR)
+library(xgboost)
+library(data.table)
+library(Matrix)
+library(randomForest)
+library(plyr)
+library(e1071)
+library(doParallel)
+library(ggthemes)
+library(GGally)
+library(gridExtra)
+```
+
+## Exploratory Data Analysis
+
+Observing the distribution of customers between the classes *churned* and *not churned* :
+
+```{r}
+# Distribution of people who churned
+ggplot(aes(x = churn, fill = churn), data = telco) +
+geom_bar(colour = "black", aes(y = ..count../ sum(..count..)), stat = "count") +
+ggtitle("Churn Analysis") +
+theme_fivethirtyeight() +
+xlab('Churn') +
+ylab('Percent') +
+theme(axis.title=element_text(size=12), legend.title = element_blank()) +
+geom_text(aes(label = (..count../ sum(..count..))*100, y= ..prop..), stat= "count") +
+scale_y_continuous(labels=percent)
+```
+
+As observed from the histogram, the percentage of people churning is much lower than the percentage of people not churning. This also implies, that the dataset is highly imbalanced.
+
+```{r results='hide'}
+# Examining the number of unique values for each numerical variable and factor levels for each categorical variable
+vec1 <- vector('character')
+vec2 <- vector('numeric')
+
+for(i in colnames(telco)[1:32])
+{
+  vec1 <- c(vec1, i)
+  vec2 <- c(vec2, length(unique(telco[[i]])))
+}
+for(i in colnames(telco)[33:56])
+{
+  vec1 <- c(vec1, i) 
+  vec2 <- c(vec2, length(levels(telco[[i]])))
+}
+
+# Create a data frame with two columns(variable name, unique values/factor levels)
+df <- data.frame(vec1, vec2)
+
+rm(vec1)
+rm(vec2)
+```
+
+#### Categorical variables
+
+Observing the categorical variables, and factor levels each one of them has:
+
+```{r}
+# Plotting the categorical variables against the number of factor levels
+ggplot(aes(x = vec1, y = vec2, fill = vec1), data = df[33:56,]) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label=vec2)) +
+  xlab("Variables") +
+  ylab("Factor Levels") +
+  ggtitle("Categorical variables - Factor levels") + 
+  theme_fivethirtyeight() +
+  theme(legend.position = "none", axis.title=element_text(size=12), 
+        axis.text.x = element_text(angle = 50))
+```
+
+Creating mosaic plots to see the relationship between some of the categorical variables and the churn variable :
+
+```{r}
+# Mosaic Plot 1
+mosaic(~churn + V49, data=telco, main = "Churn and V49", shade = TRUE, legend = TRUE)
+```
+
+Based on this mosaic plot, it can be said that, given a customer churns, the V49 value is more likely to be *UYBR* than *cJvF*. Also, if V49 value is *Unknown*, then the customer is more likely to churn.
+
+```{r}
+# Mosaic Plot 2
+mosaic(~churn + V45, data=telco, main = "Churn and V45", shade = TRUE, legend = TRUE)
+```
+
+Similar to the previous plot, given a customer churns, the V45 value is more likely to be *L84s* than *Mtgm*.
+
+Based on the bar chart,it can be observed that V36, V50, and V52 have the same number of factor levels (4291).
+
+Therefore, the association among these variables can be tested using Cramer's V. It is a measure of association between two nominal(having no order) variables, giving a value between 0 and +1 (inclusive; 0 suggesting no/weak association and 1 suggesting a strong association between the two variables). It is based on Pearson's chi-squared statistic. 
+
+```{r warning=FALSE}
+# Finding Cramer's V value between V36 and V50
+cramersV(telco$V36, telco$V50)
+
+# Finding Cramer's V value between V36 and V52
+cramersV(telco$V36, telco$V52)
+
+# Finding Cramer's V value between V50 and V52
+cramersV(telco$V50, telco$V52)
+```
+
+As observed, the variables have a very strong association (of Cramer's V = 1) with each other.
+
+If after combining the three variables into one, the factor levels remain the same (4291), it implies that the three variables are one-to-one mapped, and can be removed.
+
+```{r}
+# Combine the three variables into one and observe the number of factor levels
+telco$V365052 <- paste(telco$V36, telco$V50, sep=":")
+telco$V365052 <- paste(telco$V365052, telco$V52, sep=":")
+telco$V365052 <- factor(telco$V365052)
+length(levels(telco$V365052))
+```
+
+Since the newly merged column has the same number of factor levels(4291), the original variables will be removed; and the columns in the dataset will be reordered.
+
+```{r}
+# Remove variables that were merged
+telco$V36 <- NULL
+telco$V50 <- NULL
+telco$V52 <- NULL
+
+# Reorder variables
+telco <- telco[,c(1:53, 55, 54)]
+names(telco)[1:54] <- paste("V", 1:54, sep = "")
+```
+
+Create a vector *churnRel* which contains the Cramer's V value between each categorical variable and the variable *churn*:
+
+```{r warning=FALSE}
+# Cramer's V's association value for categorical variables with churn variables
+churnRel <- c(cramersV(telco$V33, telco$churn),
+cramersV(telco$V34, telco$churn),
+cramersV(telco$V35, telco$churn),
+cramersV(telco$V36, telco$churn),
+cramersV(telco$V37, telco$churn),
+cramersV(telco$V38, telco$churn),
+cramersV(telco$V39, telco$churn),
+cramersV(telco$V40, telco$churn),
+cramersV(telco$V41, telco$churn),
+cramersV(telco$V42, telco$churn),
+cramersV(telco$V43, telco$churn),
+cramersV(telco$V44, telco$churn),
+cramersV(telco$V45, telco$churn),
+cramersV(telco$V46, telco$churn),
+cramersV(telco$V47, telco$churn),
+cramersV(telco$V48, telco$churn),
+cramersV(telco$V49, telco$churn),
+cramersV(telco$V50, telco$churn),
+cramersV(telco$V51, telco$churn),
+cramersV(telco$V52, telco$churn),
+cramersV(telco$V53, telco$churn),
+cramersV(telco$V54, telco$churn))
+
+# Convert the vector into a dataframe
+churnRel <- as.data.frame(churnRel)
+
+# Rows named according to the order Cramer's V was calculated
+rownames(churnRel)[1:22] <- paste("V", 33:54, sep = "")
+```
+
+The churnRel dataframe is filtered to find the variables that have a Cramer's V association value with churn variable, greater than 0.1. These variables will be kept in the dataset, while other categorical variables will be discarded.
+
+```{r}
+# Filter churnRel to keep rows with association value greater than or equal to 0.1
+churnRel <- subset(churnRel, churnRel >= 0.1)
+
+# Variables which have a better association with churn than other categorical variables
+rownames(churnRel)
+
+# Remove the other categorical variables from the dataset and rename the variables
+telco <- telco[,c(1:32, 33, 36, 37, 46, 47, 54,55)]
+names(telco)[1:38] <- paste("V", 1:38, sep = "")
+```
+
+#### Numerical variables
+
+Observing the numerical variables, and unique values each one of them has:
+
+```{r}
+# Plotting the numerical variables against the number of unique values
+ggplot(aes(x = vec1, y = vec2, fill = vec1), data = df[1:32,]) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label=vec2)) +
+  xlab("Variables") +
+  ylab("Unique values") +
+  ggtitle("Numerical variables - Unique Values") + 
+  theme_fivethirtyeight() +
+  theme(legend.position = "none", axis.title=element_text(size=12), 
+        axis.text.x = element_text(angle = 50))
+```
+
+Presence of multicollinearity (predictors that are correlated with other predictors in the model, leading to unreliable and unstable estimates of regression coefficients) can degrade the quality of the model. Thus, the following steps will help to reduce multi-collinearity.
+
+```{r}
+# Based on bar chart, variables V4 and V5 have almost the same number of unique values
+# Correlation between V4 and V5
+with(telco, cor.test(V4,V5))
+
+# Comparing V4 and V5 against each other
+ggplot(aes(x = V4, y = V5), data = telco) +
+  geom_point(alpha = 0.1) +
+  theme_fivethirtyeight() +
+  theme(axis.title=element_text(size=12)) +
+  xlab("V4") +
+  ylab("V5") +
+  stat_smooth() +
+  coord_cartesian(xlim = c(0, 2500), ylim = c(0, 2500))
+```
+
+V4 and V5 have a high correlation of almost 1.
+
+```{r}
+# Based on bar chart, variables V1 and V22 have almost the same number of unique values
+# Correlation between V1 and V22
+with(telco, cor.test(V1,V22))
+
+# Comparing V1 and V22 against each other
+ggplot(aes(x = V1, y = V22), data = telco) +
+  geom_point(alpha = 0.1) +
+  theme_fivethirtyeight() +
+  theme(axis.title=element_text(size=12)) +
+  xlab("V1") +
+  ylab("V22") +
+  stat_smooth() +
+  coord_cartesian(xlim = c(0, 5000), ylim = c(0, 5000))
+```
+
+V1 and V22 also have a high correlation of 0.74
+
+Plotting the correlations among all numerical variables:
+
+```{r}
+# Correlation matrix for all numerical variables
+m <- cor(telco[,1:32])
+
+# Correlation plot among the numerical variables
+corrplot(m, type = "upper", order="hclust", method = "square", outline = T, tl.col = "indianred4", tl.cex = 0.8, cl.cex = 1.5, diag=FALSE)
+```
+
+Based on this correlation plot, the variable that has a higher correlation with *churn* variable, among a set of correlated numerical variables, will be kept in the dataset, and others will be discarded.
+
+##### V9 and V25
+
+```{r}
+# V9 and V25 seem to be highly correlated
+# Correlation between V9 and V25
+cor.test(telco$V9, telco$V25)
+
+# Comparing V9 and V25 against each other
+ggplot(aes(x = V9, y = V25), data = telco) +
+  geom_point(alpha = 0.1) +
+  theme_fivethirtyeight() +
+  theme(axis.title=element_text(size=12)) +
+  xlab("V9") +
+  ylab("V25") +
+  stat_smooth() +
+  coord_cartesian(xlim = c(0, 60))
+
+# Observe the correlation of these variables with churn and keep only the ones that have a higher correlation
+with(telco, cor.test(V9, as.numeric(churn)))
+with(telco, cor.test(V25, as.numeric(churn)))
+
+# Remove V25
+telco$V25 <- NULL
+```
+
+##### V9 and V25
+
+```{r warning=FALSE}
+# V29 and V32 seem to be highly correlated
+# Correlation between V29 and V32
+cor.test(telco$V29, telco$V32)
+
+# Comparing V29 and V32 against each other
+ggplot(aes(x = V29, y = V32), data = telco) +
+  geom_point(alpha = 0.1) +
+  theme_fivethirtyeight() +
+  theme(axis.title=element_text(size=12)) +
+  xlab("V29") +
+  ylab("V32") +
+  stat_smooth() +
+  scale_x_log10() +
+  scale_y_log10()  +
+  coord_cartesian(xlim = c(1000, 10000000), ylim = c(1000,10000000))
+
+# Observe the correlation of these variables with churn and keeping only the ones that have a higher correlation
+with(telco, cor.test(V29, as.numeric(churn)))
+with(telco, cor.test(V32, as.numeric(churn)))
+
+# Remove V32
+telco$V32 <- NULL
+```
+
+##### V1, V4, V5, V6, V7, V17, V18, V19, V20, V22, V23, and V31
+
+```{r}
+# V1, V4, V5, V6, V7, V17, V18, V19, V20, V22, V23, and V31 seem to be highly correlated
+ggpairs(telco, c("V1","V4","V5","V6","V7","V17","V18","V19","V20","V22","V23","V31"),
+        upper = list(continuous = wrap("cor", size = 4.75, alignPercent = 1))) +
+  theme_fivethirtyeight()
+
+# Observe the correlation of these variables with churn and keeping only the ones that have a higher correlation
+with(telco, cor.test(V1, as.numeric(churn)))
+with(telco, cor.test(V4, as.numeric(churn)))
+with(telco, cor.test(V5, as.numeric(churn)))
+with(telco, cor.test(V6, as.numeric(churn)))
+with(telco, cor.test(V7, as.numeric(churn)))
+with(telco, cor.test(V17, as.numeric(churn)))
+with(telco, cor.test(V18, as.numeric(churn)))
+with(telco, cor.test(V19, as.numeric(churn)))
+with(telco, cor.test(V20, as.numeric(churn)))
+with(telco, cor.test(V22, as.numeric(churn)))
+with(telco, cor.test(V23, as.numeric(churn)))
+with(telco, cor.test(V31, as.numeric(churn)))
+
+# Remove all but V1
+telco$V4 <- NULL
+telco$V5 <- NULL
+telco$V6 <- NULL
+telco$V7 <- NULL
+telco$V17 <- NULL
+telco$V18 <- NULL
+telco$V19 <- NULL
+telco$V20 <- NULL
+telco$V22 <- NULL
+telco$V23 <- NULL
+telco$V31 <- NULL
+```
+
+##### V2, V3, V12, V13, and V28
+
+```{r}
+# V2, V3, V12, V13, and V28 seem to be highly correlated
+ggpairs(telco, c("V2", "V3", "V12", "V13", "V28"),
+        upper = list(continuous = wrap("cor", size = 4.75, alignPercent = 1))) +
+  theme_fivethirtyeight()
+
+# Observe the correlation of these variables with churn and keeping only the ones that have a higher correlation
+with(telco, cor.test(V2, as.numeric(churn)))
+with(telco, cor.test(V3, as.numeric(churn)))
+with(telco, cor.test(V12, as.numeric(churn)))
+with(telco, cor.test(V13, as.numeric(churn)))
+with(telco, cor.test(V28, as.numeric(churn)))
+
+# Remove all but V13
+telco$V2 <- NULL
+telco$V3 <- NULL
+telco$V12 <- NULL
+telco$V28 <- NULL
+```
+
+##### V8, V10, V15, V16, V26, and V30
+
+```{r}
+# V8, V10, V15, V16, V26, and V30 seem to be highly correlated
+ggpairs(telco, c("V8", "V10", "V15", "V16", "V26", "V30"),
+        upper = list(continuous = wrap("cor", size = 4.75, alignPercent = 1))) +
+  theme_fivethirtyeight()
+
+# Observe the correlation of these variables with churn and keeping only the ones that have a higher correlation 
+with(telco, cor.test(V8, as.numeric(churn)))
+with(telco, cor.test(V10, as.numeric(churn)))
+with(telco, cor.test(V15, as.numeric(churn)))
+with(telco, cor.test(V16, as.numeric(churn)))
+with(telco, cor.test(V26, as.numeric(churn)))
+with(telco, cor.test(V30, as.numeric(churn)))
+
+# Remove all but V16
+telco$V8 <- NULL
+telco$V10 <- NULL
+telco$V15 <- NULL
+telco$V26 <- NULL
+telco$V30 <- NULL
+```
+
+Looking at the structure of the resulting dataset:
+
+```{r}
+# Dimensions of the dataset
+dim(telco)
+
+# First 6 rows of some of the columns
+head(tbl_df(telco))
+
+# Rename the variables 
+names(telco)[1:16] <- paste("V", 1:16, sep = "")
+```
+
