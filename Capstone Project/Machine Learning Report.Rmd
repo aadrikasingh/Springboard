@@ -1,0 +1,307 @@
+---
+title: "Machine Learning"
+author: "Aadrika Singh"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    fig_width: 12
+    fig_height: 8
+---
+
+```{r echo=FALSE}
+telco <- read.csv("telcoML.csv", header = TRUE)
+telco <- telco[,2:18]
+```
+
+## Load all required packages
+
+```{r results='hide', message=FALSE, warning=FALSE}
+library(ggplot2)
+library(tidyr)
+library(caret)
+library(car)
+library(Hmisc)
+library(caTools)
+library(forcats)
+library(dplyr)
+library(lattice)
+library(vcd)
+library(corrplot)
+library(scales)
+library(MASS)
+library(psych)
+library(lsr)
+library(DMwR)
+library(xgboost)
+library(data.table)
+library(Matrix)
+library(randomForest)
+library(plyr)
+library(e1071)
+library(doParallel)
+library(ggthemes)
+library(GGally)
+library(gridExtra)
+```
+
+The purpose of this analysis is to predict the propensity of customers to churn, based on the analysis of other attributes that concern a customer.
+As the problem aims to predict a binary variable *churn* (~Yes/~No), a classification model should be applied. Since the model will learn from a training set and predict for a test dataset thereafter, it is a supervised model.
+
+Thus, the entire dataset will be split into a training set and a test set (7:3 ratio), such that the distribution of the *churn* variable remains the same as before, for both of the resulting datasets.
+
+```{r results='hide'}
+# Splitting the dataset into training and test sets
+split <- sample.split(telco$churn, SplitRatio = 0.7)
+train <- subset(telco, split == TRUE) # TRAIN
+test <- subset(telco, split == FALSE) # TEST
+```
+
+As was observed from the EDA, the dataset is highly imbalanced. Therefore, we use Synthetic Minority Over-Sampling Technique (SMOTE) to oversample (increase the number of) minority/ under-represented class, and undersample the majority class, so as to strike a balance between the two classes in the training dataset.
+
+```{r}
+# Synthetic Minority Over - Sampling Technique (SMOTE)
+trainDF <- data.table(train, keep.rownames = F)
+trainDF <- SMOTE(form = churn ~ ., data = trainDF, perc.over = 300, perc.under = 150)
+
+# Distribution of people who churned in trainDF
+ggplot(aes(x = churn, fill = churn), data = trainDF) +
+geom_bar(colour = "black", aes(y = ..count../ sum(..count..)), stat = "count") +
+ggtitle("Churn Analysis") +
+theme_fivethirtyeight() +
+xlab('Churn') +
+ylab('Percent') +
+theme(axis.title=element_text(size=12), legend.title = element_blank()) +
+geom_text(aes(label = (..count../ sum(..count..))*100, y= ..prop..), stat= "count") +
+scale_y_continuous(labels=percent)
+```
+
+The dataset appears to be somewhat balanced after SMOTE, with nearly a 50:50 ratio.
+
+One hot encoding is a process by which each factor for each categorical variable is converted into a binary variable, so that it could be provided to ML algorithms to do a better job in prediction. Thus, one-hot encoding is done on the trainDF dataset.
+
+```{r}
+# One-hot encoding - Create a sparse matrix with categorical variables one-hot encoded
+sparse_matrix <- sparse.model.matrix(churn~.-1, data = trainDF)
+head(sparse_matrix)
+
+# Create a vector that contains only the rows depicting the customer has churned
+output_vector = trainDF[,churn] == "Yes"
+```
+
+##### XGBoost Model
+
+XGBoost is an implementation of gradient boosted decision trees designed for speed and performance. Gradient boosting involves three elements:a loss function to be optimized; a weak learner to make predictions, and an additive model to add weak learners to minimize the loss function.
+
+```{r}
+# Create a XGBoost model
+XGBmod <- xgboost(data = sparse_matrix, output_vector, nrounds = 10, objective = "binary:logistic")
+
+# Look at feature importance
+importance <- xgb.importance(feature_names = colnames(sparse_matrix), model = XGBmod)
+
+# Top 10 important features
+head(importance,10)
+
+# Plot feature importance plot to see important variables
+xgb.plot.importance(importance_matrix = importance)
+
+# Prediction on test set and storing the result in a confusion matrix
+XGBPredMat <- as.matrix(table(test$churn, as.numeric(predict(XGBmod, xgb.DMatrix(sparse.model.matrix(churn~.-1, data = test))))>0.4))
+
+# Renaming the column and row names
+colnames(XGBPredMat) <- c("Will Not Churn", "Will Churn")
+rownames(XGBPredMat) <- c("Didn't Churn", "Churned")
+
+# Confusion Matrix
+XGBPredMat
+```
+
+##### Random Forests
+
+Random forests are ensemble learning method which creates multiple decision trees at the time of traing and outputs the class that is the mode of the classes, for classification models.
+
+```{r}
+########## Random Forest Model 1 ##########
+
+# Since randomForest can't handle categorical predictors with more than 53 categories, we create a dataframe trainRF, which only contains variables upto 53 categorical factor levels
+trainRF <- trainDF
+for(i in colnames(trainRF)[11:16]){
+  if(length(levels(trainRF[[i]])) > 50) {
+   trainRF[[i]] <- NULL
+   }
+}
+
+# Fit the random Forest model using all variables
+RFmod <- randomForest(factor(churn)~.,data = trainRF)
+
+# Prediction on test set and storing the result in a confusion matrix
+RFPredMat1 <- as.matrix(table(test$churn, predict(object = RFmod, test)))
+
+# Renaming the column and row names
+colnames(RFPredMat1) <- c("Will Not Churn", "Will Churn")
+rownames(RFPredMat1) <- c("Didn't Churn", "Churned")
+
+# Confusion Matrix
+RFPredMat1
+```
+
+```{r}
+# Use variable importance plot to select top variables
+varImpPlot(RFmod)
+```
+
+```{r}
+########## Random Forest Model 2 ##########
+
+# Set up parallel computation
+cl <- makeCluster(2)
+registerDoParallel(cl)
+
+# Specify the type of resampling
+fitControl <- trainControl(method = "repeatedcv",
+                           number = 5,
+                           repeats = 3,
+                           summaryFunction = prSummary,
+                           classProbs = TRUE,
+                           allowParallel = TRUE)
+
+# Set Seed
+set.seed(825)
+
+# Fit the random forest model with some of the top variables, as observed from the plot
+trainDF <- as.data.frame(trainDF)
+rfFit1 <- train(trainDF[,c(4, 6, 3, 7, 10, 1, 9)],
+                trainDF[,17],
+                data = trainDF,
+                method = "rf",
+                trControl = fitControl,
+                metric = "F"
+                )
+# RF Model 2
+rfFit1
+
+# Prediction on test set and storing the result in a confusion matrix
+RFPredMat2 <- as.matrix(table(test$churn, predict(object = rfFit1, test)))
+
+# Renaming the column and row names
+colnames(RFPredMat2) <- c("Will Not Churn", "Will Churn")
+rownames(RFPredMat2) <- c("Didn't Churn", "Churned")
+
+# Confusion Matrix
+RFPredMat2 
+```
+
+```{r}
+########## Random Forest Model 3 ##########
+
+# Fit the random forest model with more of the top variables, as observed from the plot
+trainDF <- as.data.frame(trainDF)
+rfFit2 <- train(trainDF[,c(4, 6, 3, 7, 10, 1, 9, 8, 5)],
+                trainDF[,17],
+                data = trainDF,
+                method = "rf",
+                trControl = fitControl,
+                metric = "F"
+                )
+
+# RF Model 3
+rfFit2
+
+# Prediction on test set and storing the result in a confusion matrix
+RFPredMat3 <- as.matrix(table(test$churn, predict(object = rfFit2, test)))
+
+# Renaming the column and row names
+colnames(RFPredMat3) <- c("Will Not Churn", "Will Churn")
+rownames(RFPredMat3) <- c("Didn't Churn", "Churned")
+
+# Confusion Matrix
+RFPredMat3
+
+# Stop parallel computation
+stopCluster(cl)
+registerDoSEQ()
+```
+
+## Comparison of the models based on prediction
+Metrics to compare models:
+- Precision (Positive Predictive Value) : Of those classified as *Will churn*, what proportion actually did?
+- Recall (True Positive Rate) : Of those that in fact Churned, what proportion were classified that way?
+- Accuracy : Calculated as the number of all correct predictions divided by the total number of the dataset values.
+- F Score : harmonic mean of precision and recall (so as to balance both accordingly)
+
+```{r}
+# Evaluate XG Boost Model
+P1 <- XGBPredMat[2,2]/(XGBPredMat[1,2] + XGBPredMat[2,2]) # Precision
+R1 <- XGBPredMat[2,2]/(XGBPredMat[2,1] + XGBPredMat[2,2]) # Recall
+F1 <- (2*P1*R1)/(P1 + R1)                                 # F-measure 
+A1 <- (XGBPredMat[1,1] + XGBPredMat[2,2])/sum(XGBPredMat) # Accuracy
+
+# Evaluate 1st Random Forest Model
+P2 <- RFPredMat1[2,2]/(RFPredMat1[1,2] + RFPredMat1[2,2]) # Precision
+R2 <- RFPredMat1[2,2]/(RFPredMat1[2,1] + RFPredMat1[2,2]) # Recall
+F2 <- (2*P2*R2)/(P2 + R2)                                 # F-measure 
+A2 <- (RFPredMat1[1,1] + RFPredMat1[2,2])/sum(RFPredMat1) # Accuracy
+
+# Evaluate 2nd Random Forest Model
+P3 <- RFPredMat2[2,2]/(RFPredMat2[1,2] + RFPredMat2[2,2]) # Precision
+R3 <- RFPredMat2[2,2]/(RFPredMat2[2,1] + RFPredMat2[2,2]) # Recall
+F3 <- (2*P3*R3)/(P3 + R3)                                 # F-measure 
+A3 <- (RFPredMat2[1,1] + RFPredMat2[2,2])/sum(RFPredMat2) # Accuracy
+
+# Evaluate 3rd Random Forest Model
+P4 <- RFPredMat3[2,2]/(RFPredMat3[1,2] + RFPredMat3[2,2]) # Precision
+R4 <- RFPredMat3[2,2]/(RFPredMat3[2,1] + RFPredMat3[2,2]) # Recall
+F4 <- (2*P4*R4)/(P4 + R4)                                 # F-measure 
+A4 <- (RFPredMat3[1,1] + RFPredMat3[2,2])/sum(RFPredMat3) # Accuracy
+
+# Create a model evaluation dataframe with all the metrics stored for each model
+modelEval <- data.frame(c(P1,P2,P3,P4),c(R1,R2,R3,R4),c(F1,F2,F3,F4),c(A1,A2,A3,A4))
+
+# Column names for the dataframe
+colnames(modelEval) <- c("Precision", "Recall", "Fmeasure", "Accuracy")
+
+# Add a column to specify the respective model names for the metrics
+modelEval$Model <- as.factor(c("XGB", "RF1", "RF2", "RF3"))
+
+# Rearrange columns
+modelEval <- modelEval[,c(5,1:4)]
+
+# Compare Precision of the models
+g1 <- ggplot(aes(x = Model, y = Precision, color = Model), data = modelEval) +
+  geom_point(size = 3) +
+  ggtitle("Precision - Comparison") +
+  theme_fivethirtyeight() + 
+  xlab('Model') +
+  ylab('Precision') +
+  theme(legend.position = "none")
+
+# Compare Recall of the models
+g2 <- ggplot(aes(x = Model, y = Recall, color = Model), data = modelEval) +
+  geom_point(size = 3) +
+  ggtitle("Recall - Comparison") +
+  theme_fivethirtyeight() + 
+  xlab('Model') +
+  ylab('Recall') +
+  theme(legend.position = "none")
+
+# Compare F - Measure of the models
+g3 <- ggplot(aes(x = Model, y = Fmeasure, color = Model), data = modelEval) +
+  geom_point(size = 3) +
+  ggtitle("F measure - Comparison") +
+  theme_fivethirtyeight() + 
+  xlab('Model') +
+  ylab('F - measure') +
+  theme(legend.position = "none")
+
+# Compare Accuracy of the models
+g4 <- ggplot(aes(x = Model, y = Accuracy, color = Model), data = modelEval) +
+  geom_point(size = 3) +
+  ggtitle("Accuracy - Comparison") +
+  theme_fivethirtyeight() + 
+  xlab('Model') +
+  ylab('Accuracy') +
+  theme(legend.position = "none")
+
+grid.arrange(g1,g2,g3,g4, ncol = 2)
+```
