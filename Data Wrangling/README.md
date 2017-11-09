@@ -1,1 +1,1 @@
-This folder contains the assignments for the section "Data Wrangling ".
+This folder contains the projects for the section "Data Wrangling ".
