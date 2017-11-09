@@ -14,3 +14,5 @@ FILES DESCRIPTION:
 - Machine Learning Report : A report on machine learning techniques that were applied on the dataset
 - Machine_Learning_Report.html : [Rendered Machine Learning Report HTML](http://htmlpreview.github.io/?https://github.com/singhaadrika/Springboard/blob/master/Capstone%20Project/Machine_Learning_Report.html)
 - Capstone Project Code.Rmd : RMarkDown containing the entire capstone project code
+- Capstone Milestone Report.Rmd : An early draft of the final Capstone report
+- Capstone_Milestone_Report.html : [Rendered Capstone Milestone Report HTML](http://htmlpreview.github.io/?https://github.com/singhaadrika/Springboard/blob/master/Capstone%20Project/Capstone_Milestone_Report.html)
