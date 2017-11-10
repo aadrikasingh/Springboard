@@ -1,0 +1,1020 @@
+---
+title: "Capstone Report"
+author: "Aadrika Singh"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    fig_width: 12
+    fig_height: 8
+---
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r results='hide', message=FALSE, warning=FALSE, echo=FALSE}
+# Load all required packages
+library(ggplot2)
+library(tidyr)
+library(caret)
+library(car)
+library(Hmisc)
+library(caTools)
+library(forcats)
+library(dplyr)
+library(lattice)
+library(vcd)
+library(corrplot)
+library(scales)
+library(MASS)
+library(psych)
+library(lsr)
+library(DMwR)
+library(xgboost)
+library(data.table)
+library(Matrix)
+library(randomForest)
+library(plyr)
+library(e1071)
+library(doParallel)
+library(ggthemes)
+library(GGally)
+library(gridExtra)
+library(ggmosaic)
+```
+
+## WHAT IS CUSTOMER CHURN?
+
+Customer churn refers to customers stopping the use of a service, switching to a competitor service, switching to a lower-tier experience in the service or reducing engagement with the service.
+
+With easy communication and a number of service providers available in the telecommunication industry, almost everyone today has a telecom subscription. Churn is especially important to telecom service providers because it is easy for a subscriber to switch services. 
+
+Factors such as perceived frequent service disruptions, poor customer service experiences, and better offers from other competing carriers may cause a customer to churn (likely to leave).
+
+## WHY IS CUSTOMER CHURN IMPORTANT FOR TELECOM INDUSTRIES?
+
+Reducing customer churn is a key business goal of every telecom business. The ability to predict that a particular customer is at a high risk of churning, while there is still time to do something about it, represents a huge additional potential revenue source for every telecom business. 
+
+Besides the direct loss of revenue that results from a customer abandoning the business, the costs of initially acquiring that customer may not have already been covered by the customer's spending to date. (In other words, acquiring that customer may have actually been a losing investment.)
+
+Furthermore, it is always more difficult and expensive to acquire a new customer than it is to retain a current paying customer.
+
+## HOW TO REDUCE CUSTOMER CHURN?
+
+In order to succeed at retaining customers who would otherwise abandon the business, marketers and retention, experts must be able to :
+
+- predict in advance which customers are going to churn through churn analysis, and
+
+- know which marketing actions will have the greatest retention impact on each particular customer. 
+
+Armed with this knowledge, a large proportion of customer churn can be eliminated. 
+
+## HOW DOES PREDICTING CUSTOMER CHURN HELP?
+
+Churn Prediction model can help analyze the historical data available with the business to find the list of customers which are at high risk to churn. This will help the telecom industry to focus on a specific group rather than using retention strategies on every customer. 
+
+Individualized customer retention is difficult because businesses usually have a big customer base and cannot afford to spend much time and money for it. However, if we could predict in advance which customers are at risk of leaving, we can reduce customer retention efforts by directing them solely toward such customers.
+
+## CUSTOMER CHURN ANALYSIS
+
+The project will aim to analyze the data for a telecommunication company (intended client for the project), and predict in advance, which customers are likely to churn, based on the data analysis. 
+
+The goals of the analysis:
+
+- *acquire* a telecom company's dataset
+- perform *data wrangling* : clean the dataset and get it into a format amenable for analysis
+- perform *exploratory data analysis* : summarize and visualize important characteristics and statistical properties of the dataset 
+- apply *machine learning* : in-depth data analysis, build models that predict the propensity of customers to churn, evaluate the results of models, and eventually, choose the best suitable predictive model to predict customers who may churn 
+
+*P.S. : The complete R code for this analysis can be found [here](https://github.com/singhaadrika/Springboard/blob/master/Capstone%20Project/Capstone%20Project%20Code.Rmd)*
+
+## DATASET ACQUISITION
+
+The data for this project comes from the data made available as a part of *[KDD Cup 2009: Customer Relationship prediction](http://www.kdd.org/kdd-cup/view/kdd-cup-2009/Intro)* :
+
+* [Train Data](http://www.kdd.org/cupfiles/KDDCupData/2009/orange_small_train.data.zip)
+* [Train Churn Labels](http://www.kdd.org/cupfiles/KDDCupData/2009/files/orange_small_train_churn.labels)
+
+For analysis with R, the telecom company's training dataset is imported as a data frame. 
+```{r echo=FALSE}
+# Reading the dataset ; reading all blanks as NA
+telco <- as.data.frame(read.delim("Dataset/orange_small_train.data", na.strings=c("","NA"), header=TRUE, sep="\t", fill=TRUE))
+
+# Add the variable *churn* as a new column
+telco$churn <- as.factor(read.table("Dataset/orange_small_train_churn.txt")$V1)
+```
+Looking at the dimensions of the dataset :
+```{r echo=FALSE}
+# Dimensions of the dataset
+dim(telco)
+```
+Looking at the first 6 rows of some of the columns:
+```{r echo=FALSE}
+head(tbl_df(telco))
+```
+
+### Dataset Information:
+
+* There are *50,000* observations of *231* variables in the dataset. 
+* Each row corresponds to a unique customer.
+* From the dataset description, it is known that the first *190* variables are **numerical**, next *40* variables are **categorical**, and the last variable is the **binary** variable **churn**, which specifies whether a given customer churned or not.
+* The dataset fields contain information about several customer attributes.
+
+### Limitations:
+
+* The variable fields are named as Var1, Var2, etc., which makes it difficult to identify which customer attribute is being looked at.
+* Similarly, the information contained in categorical variables seem to be coded, again making it to difficult to relate to the kind of information contained in these fields.
+* The dimensionality of the dataset is high (230 variables with 50000 observations), making it difficult to run certain transformations on the dataset, with the available infrastructural capacity.
+
+## CLEANING THE DATASET
+
+The first step in analyzing data is to clean the dataset and get it into a format amenable for analysis.
+As seen earlier, there are a lot of *missing values* in the dataset. Thus, the proportion of missing values per column is observed using a histogram.
+
+```{r echo=FALSE}
+# Looking at the proportion of missing values in the remaining columns
+checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
+
+# Plotting a histogram of the proportion of missing values
+hist(checkNA,
+     main = paste ("Histogram of the proportion of missing values"),
+     xlab = "Proportion of missing values",
+     ylab = "Count of variables",
+     labels = TRUE)
+```
+
+**<span style="color:darkred">Action</span>**: 
+
+* the columns with more than 20% of the data missing, will be removed (most of the columns have more than 90% missing data, and otherwise, there are not many variables with missing values proportions between 20% - 80%), as these variables will not contribute much towards the final goal of prediction.
+
+* the variables with near-zero variance (such as columns having a unique value) will be removed, as they may not be useful for discriminating classes.
+
+* the resulting dataset columns will be renamed in order again, with the last column being churn.
+
+* the binary variable *churn* will be relabeled as No/Yes instead of 0/1.
+```{r results='hide', echo=FALSE}
+# Removing the columns which have more than 20% NA values
+telco <- telco[, checkNA <= 0.2]
+
+# Get indices of columns with low variance
+badCols <- nearZeroVar(telco)
+
+# Fraction of the total columns that have near-zero variance
+print(paste("Fraction of nearZeroVar columns:", round(length(badCols)/length(telco),4)))
+
+# Remove the bad columns from dataset
+telco <- telco[, -badCols]
+```
+Looking at the dimensions of the resulting dataset :
+```{r echo=FALSE}
+# Dimensions of the resulting dataset
+dim(telco)
+```
+Looking at the first 6 rows of some of the columns:
+```{r echo=FALSE}
+head(tbl_df(telco))
+```
+
+**<span style="color:blue">Result</span>**: The dataset now has only *57* variables, all of which have **less than 20%** missing data.
+
+```{r echo=FALSE}
+# Renaming the column names to be in proper order
+names(telco)[1:56] <- paste("V", 1:56, sep = "")
+
+# Replacing -1 with 0 for churn variable
+levels(telco$churn)[telco$churn == "-1"] <- "0"
+
+# Relabel the churn variable as No/Yes instead of 0/1
+telco$churn <- factor(telco$churn, levels=c('0', '1'),
+  labels=c('No', 'Yes'))
+```
+
+## DEALING WITH MISSING DATA
+
+Since missing data values can create problems for analyzing data and creating predictive models, they need to be treated. **Imputation** is the process for *substituting* missing data.
+
+*Simple/single imputation methods* include replacing the missing value with the mean/median/mode of the variable. However, creating *multiple imputations* as compared to a single imputation (such as mean) takes care of uncertainty in missing values.
+
+In bootstrapping, different bootstrap resamples are used for each of multiple imputations. Then, a flexible additive model (non parametric regression method) is fitted on samples taken with replacements from original data and missing values (acts as dependent variable) are predicted using non-missing values (independent variable).Then, it uses predictive mean matching (default) to impute missing values.
+
+**<span style="color:darkred">Action</span>**: 
+
+* For imputing the missing values for **numerical variables**, *mean imputation using additive regression, bootstrapping, and predictive mean matching* will be used. 
+
+* For the variables that are heavily skewed and are excluded from the previous step, *median imputation* will be used to fill in the missing values.
+
+* For **categorical variables**, all the NA values will be replaced by another factor level called *Unknown*.
+
+From the dataset, it is known, that the first 32 variables are numerical. Analyzing the summaries for these numerical variables :
+
+```{r}
+# Analyze summary for numerical variables - I
+summary(subset(telco, select = colnames(telco)[1:11]))
+# Analyze summary for numerical variables - II
+summary(subset(telco, select = colnames(telco)[12:22]))
+# Analyze summary for numerical variables - III
+summary(subset(telco, select = colnames(telco)[23:32]))
+```
+
+**<span style="color:blue">Result</span>**: It can be seen, that, the variables *V9, V12 and V25* are heavily skewed, and therefore, median imputation will be used for these variables, to fill in the missing values.
+
+Looking at the variables that have no missing values:
+```{r echo=FALSE}
+# Set Seed
+set.seed(144)
+
+# Identify the variables that have no missing values, to remove them from the imputation
+checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
+
+# Names of the variables that have no missing values
+names(telco[, checkNA == 0])
+```
+
+Excluding the above variables, applying *median imputation* for skewed numerical variables, *multiple imputation* for the remaining numerical variables, and adding an "*Unknown*" factor level which replaces missing values in categorical variables, it is ensured that none of the variables in the dataset has missing values anymore:
+```{r results='hide', echo=FALSE}
+# Use imputation 
+f <- aregImpute(~V1+V2+V3+V4+V5+V6+V7+V8+V10+V14+V15+V16+V17+V18+V19+V20+V22+V23+V24+V26+V27+V28+V29+V30+V31+V32, data = telco, n.impute = 5)
+
+# Get the imputed values
+imputed <-impute.transcan(f, data=telco, imputation=1, list.out=TRUE, pr=FALSE, check=FALSE)
+
+# Convert the list to the database
+imputed.data <- as.data.frame(do.call(cbind,imputed))
+
+# Arrange the columns accordingly
+imputed.data <- imputed.data[, colnames(telco)[c(1,2,3,4,5,6,7,8,10,14,15,16,17,18,19,20,22,23,24,26,27,28,29,30,31,32)], drop = FALSE]
+
+# Update the dataset
+for(i in colnames(telco)[c(1,2,3,4,5,6,7,8,10,14,15,16,17,18,19,20,22,23,24,26,27,28,29,30,31,32)]){
+ telco[[i]] <- imputed.data[[i]]
+}
+
+# Dealing with missing values for categorical variables - adding the level "Unknown"
+for(i in colnames(telco)[33:56]){
+ levels(telco[[i]]) <- c(levels(telco[[i]]), "Unknown") 
+ telco[[i]][is.na(telco[[i]])] <- "Unknown"
+}
+
+# Drop unused levels
+for(i in colnames(telco)[33:56]){
+ telco[[i]] <- droplevels(telco[[i]])
+}
+
+# Identify the variables that have missing values, to fill the missing values
+checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
+
+# Names of the variables that have may have missing values
+names(telco[, checkNA != 0])
+
+# Function to replace NA values with median of the column
+replaceMed <- function(x){ifelse(is.na(x), median(x, na.rm = TRUE), x)}
+
+# Replacing the NA value in the columns with median of the column
+for(i in colnames(telco)[c(9,12,25)]){
+ telco[[i]] <- replaceMed(telco[[i]])
+}
+
+# Ensuring that no variable has a missing value anymore
+checkNA <- sapply(X = telco, FUN = function(x){sum(is.na(x))/nrow(telco)})
+```
+
+```{r}
+# Names of the variables that may have missing values
+names(telco[, checkNA != 0])
+```
+
+**<span style="color:blue">Result</span>**: Thus, the missing values for all the variables (numerical/categorical) have been imputed, and there are no features with missing values in the dataset.
+
+## EXPLORATORY DATA ANALYSIS
+
+The next step in data analysis, which follows data wrangling, is exploratory data analysis, which refers to summarizing and visualizing important characteristics and statistical properties of the dataset.
+
+Observing the distribution of customers between the classes *churned* and *not churned* :
+
+### Distribution of people who churned
+```{r echo=FALSE}
+## Distribution of people who churned
+ggplot(aes(x = churn), 
+       data = telco) +
+geom_bar(colour = c("#336600", "#990000"), 
+         aes(y = ..count../ sum(..count..)), 
+         stat = "count", 
+         fill = c("#669933","#CC3333"), 
+         size = 1.5) +
+ggtitle("Churn Analysis") +
+theme_fivethirtyeight() +
+xlab('Churn') +
+ylab('Percent') +
+theme(axis.title=element_text(size=12), 
+      legend.title = element_blank()) +
+geom_text(aes(label = round((..count../ sum(..count..))*100,2), 
+              y= ..prop..), 
+          stat = "count") +
+scale_y_continuous(labels=percent) 
+```
+
+**<span style="color:blue">Finding</span>**: The percentage of people churning is much lower than the percentage of people not churning, which in turn, also implies, that the dataset is highly *imbalanced*.
+```{r results='hide', echo=FALSE}
+# Examining the number of unique values for each numerical variable and factor levels for each categorical variable
+vec1 <- vector('character')
+vec2 <- vector('numeric')
+
+for(i in colnames(telco)[1:32])
+{
+  vec1 <- c(vec1, i)
+  vec2 <- c(vec2, length(unique(telco[[i]])))
+}
+for(i in colnames(telco)[33:56])
+{
+  vec1 <- c(vec1, i) 
+  vec2 <- c(vec2, length(levels(telco[[i]])))
+}
+
+# Create a data frame with two columns(variable name, unique values/factor levels)
+df <- data.frame(vec1, vec2)
+
+rm(vec1)
+rm(vec2)
+```
+
+### Categorical variables
+
+Observing the categorical variables, and factor levels each one of them has:
+
+```{r echo=FALSE}
+# Plotting the categorical variables against the number of factor levels
+ggplot(aes(x = vec1, y = vec2, fill = vec1), data = df[33:56,]) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label=vec2)) +
+  xlab("Variables") +
+  ylab("Factor Levels") +
+  ggtitle("Categorical variables - Factor levels") + 
+  theme_fivethirtyeight() +
+  theme(legend.position = "none", axis.title=element_text(size=12), 
+        axis.text.x = element_text(angle = 50))
+```
+
+**<span style="color:blue">Finding</span>**: It can be observed that V36, V50, and V52 have the same number of factor levels (4291).
+
+**<span style="color:darkred">Action</span>**: Creating mosaic plots to see the relationship between some of the categorical variables and the churn variable :
+
+#### Relationship between V49 and whether the customer churned or not
+```{r echo=FALSE}
+ggplot(data = telco) +
+  geom_mosaic(aes(x = product(churn), fill = V49), colour = "black", size = 1) +
+  ggtitle("Churn Analysis by V49") +
+  theme_fivethirtyeight() +
+  xlab('Churn') +
+  theme(axis.title=element_text(size=12),
+        legend.title = element_blank())
+```
+**<span style="color:blue">Finding</span>**: Based on this mosaic plot, it can be said that, given a customer churns, the V49 value is more likely to be **UYBR** than **cJvF**. Also, if V49 value is **Unknown**, then the customer is more likely to churn.
+
+#### Relationship between V45 and whether the customer churned or not
+```{r echo=FALSE}
+ggplot(data = telco) +
+  geom_mosaic(aes(x = product(churn), fill = V45), colour = "black", size = 1) +
+  ggtitle("Churn Analysis by V45") +
+  theme_fivethirtyeight() +
+  xlab('Churn') +
+  theme(axis.title=element_text(size=12),
+        legend.title = element_blank())
+```
+**<span style="color:blue">Finding</span>**: Similar to the previous plot, given a customer churns, the V45 value is more likely to be **L84s** than **Mtgm**.
+
+#### Relationship between V41 and whether the customer churned or not
+```{r echo=FALSE}
+ggplot(data = telco) +
+  geom_mosaic(aes(x = product(churn), fill = V41), colour = "black", size = 1) +
+  ggtitle("Churn Analysis by V41") +
+  theme_fivethirtyeight() +
+  xlab('Churn') +
+  theme(axis.title=element_text(size=12),
+        legend.title = element_blank())
+```
+**<span style="color:blue">Finding</span>**: If V41 value is **sJzTIal**, then the customer is more likely to churn.
+
+**<span style="color:darkred">Action</span>**: Based on the finding that V36, V50, and V52 have the same number of factor levels (4291), the association among these variables can be tested using Cramer's V. 
+
+**Cramer's V** is a measure of association between two nominal(having no order) variables, giving a value between 0 and +1 (inclusive; 0 suggesting no/weak association and 1 suggesting a strong association between the two variables). It is based on Pearson's chi-squared statistic. 
+
+Looking at the Cramer's V association value among these variables:
+
+```{r warning=FALSE}
+# Finding Cramer's V value between V36 and V50
+cramersV(telco$V36, telco$V50)
+# Finding Cramer's V value between V36 and V52
+cramersV(telco$V36, telco$V52)
+# Finding Cramer's V value between V50 and V52
+cramersV(telco$V50, telco$V52)
+```
+**<span style="color:blue">Finding</span>**: As observed, the variables have a very strong association (of Cramer's V = 1) with each other.
+
+**<span style="color:darkred">Action</span>**: The three variables will be combined into one variable, and the factor levels for the resulting variable will be observed:
+```{r echo=FALSE}
+# Combine the three variables into one and observe the number of factor levels
+telco$V365052 <- paste(telco$V36, telco$V50, sep=":")
+telco$V365052 <- paste(telco$V365052, telco$V52, sep=":")
+telco$V365052 <- factor(telco$V365052)
+length(levels(telco$V365052))
+```
+**<span style="color:blue">Finding</span>**: The newly merged column has the same number of factor levels (4291) as the original columns.
+```{r echo=FALSE}
+# Remove variables that were merged
+telco$V36 <- NULL
+telco$V50 <- NULL
+telco$V52 <- NULL
+
+# Reorder variables
+telco <- telco[,c(1:53, 55, 54)]
+names(telco)[1:54] <- paste("V", 1:54, sep = "")
+```
+
+**<span style="color:darkred">Action</span>**: 
+
+* the original variables will be removed; and the columns in the dataset will be reordered
+
+* create a dataframe *churnRel* which contains the Cramer's V value between each categorical variable and the variable *churn*.
+
+* filter the dataframe to find the variables that have a Cramer's V association value with churn variable, greater than 0.1. 
+
+* keep these variables in the dataset, and discard the other categorical variables
+
+* rename the variables in proper order
+
+Variables which have a better association with churn than other categorical variables, and will be kept in the dataset:
+```{r warning=FALSE, echo=FALSE}
+# Cramer's V's association value for categorical variables with churn variables
+churnRel <- c(cramersV(telco$V33, telco$churn),
+cramersV(telco$V34, telco$churn),
+cramersV(telco$V35, telco$churn),
+cramersV(telco$V36, telco$churn),
+cramersV(telco$V37, telco$churn),
+cramersV(telco$V38, telco$churn),
+cramersV(telco$V39, telco$churn),
+cramersV(telco$V40, telco$churn),
+cramersV(telco$V41, telco$churn),
+cramersV(telco$V42, telco$churn),
+cramersV(telco$V43, telco$churn),
+cramersV(telco$V44, telco$churn),
+cramersV(telco$V45, telco$churn),
+cramersV(telco$V46, telco$churn),
+cramersV(telco$V47, telco$churn),
+cramersV(telco$V48, telco$churn),
+cramersV(telco$V49, telco$churn),
+cramersV(telco$V50, telco$churn),
+cramersV(telco$V51, telco$churn),
+cramersV(telco$V52, telco$churn),
+cramersV(telco$V53, telco$churn),
+cramersV(telco$V54, telco$churn))
+
+# Convert the vector into a dataframe
+churnRel <- as.data.frame(churnRel)
+
+# Rows named according to the order Cramer's V was calculated
+rownames(churnRel)[1:22] <- paste("V", 33:54, sep = "")
+
+# Filter churnRel to keep rows with association value greater than or equal to 0.1
+churnRel <- subset(churnRel, churnRel >= 0.1)
+
+# Variables which have a better association with churn than other categorical variables
+rownames(churnRel)
+
+# Remove the other categorical variables from the dataset and rename the variables
+telco <- telco[,c(1:32, 33, 36, 37, 46, 47, 54,55)]
+names(telco)[1:38] <- paste("V", 1:38, sep = "")
+```
+
+Thus, we keep the above variables in the dataset, remove the other categorical variables, and rename the variables in proper order.
+
+### Numerical variables
+
+Observing the numerical variables, and unique values each one of them has:
+
+```{r echo=FALSE}
+# Plotting the numerical variables against the number of unique values
+ggplot(aes(x = vec1, y = vec2, fill = vec1), data = df[1:32,]) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label=vec2)) +
+  xlab("Variables") +
+  ylab("Unique values") +
+  ggtitle("Numerical variables - Unique Values") + 
+  theme_fivethirtyeight() +
+  theme(legend.position = "none", axis.title=element_text(size=12), 
+        axis.text.x = element_text(angle = 50))
+```
+Presence of multicollinearity (predictors that are correlated with other predictors in the model, leading to unreliable and unstable estimates of regression coefficients) can degrade the quality of the model. **Thus, the following steps will help to reduce multi-collinearity**.
+
+**<span style="color:blue">Finding</span>**: Based on bar chart, variables V4 and V5 have almost the same number of unique values. Similarly, variables V1 and V22 have almost the same number of unique values.
+
+#### Comparing V4 and V5 against each other
+```{r echo=FALSE, warning=FALSE}
+ggplot(aes(x = V4, y = V5), data = telco) +
+  geom_point(alpha = 0.1) +
+  theme_fivethirtyeight() +
+  theme(axis.title=element_text(size=12)) +
+  xlab("V4") +
+  ylab("V5") +
+  stat_smooth() +
+  coord_cartesian(xlim = c(0, 2500), ylim = c(0, 2500))
+```
+Correlation between V4 and V5:
+```{r echo=FALSE}
+with(telco, cor.test(V4,V5))
+```
+
+#### Comparing V1 and V22 against each other
+```{r echo=FALSE, warning=FALSE}
+ggplot(aes(x = V1, y = V22), data = telco) +
+  geom_point(alpha = 0.1) +
+  theme_fivethirtyeight() +
+  theme(axis.title=element_text(size=12)) +
+  xlab("V1") +
+  ylab("V22") +
+  stat_smooth() +
+  coord_cartesian(xlim = c(0, 5000), ylim = c(0, 5000))
+```
+Correlation between V1 and V22:
+```{r echo=FALSE}
+with(telco, cor.test(V1,V22))
+```
+**<span style="color:blue">Finding</span>**: V4 and V5 have a high correlation of almost 1. V1 and V22 also have a high correlation of 0.74
+
+**<span style="color:darkred">Action</span>**: Plotting the correlations among all numerical variables:
+
+```{r echo=FALSE}
+# Correlation matrix for all numerical variables
+m <- cor(telco[,1:32])
+
+# Correlation plot among the numerical variables
+corrplot(m, type = "upper", order="hclust", method = "square", outline = T, tl.col = "indianred4", tl.cex = 0.8, cl.cex = 1.5, diag=FALSE)
+```
+**Based on this correlation plot, the variable that has a higher correlation with *churn* variable, among a set of correlated numerical variables, will be kept in the dataset, and others will be discarded.**
+
+**<span style="color:blue">Finding</span>**: 
+
+* V9 and V25 seem to be highly correlated
+* V29 and V32 seem to be highly correlated
+* V1, V4, V5, V6, V7, V17, V18, V19, V20, V22, V23, and V31 seem to be highly correlated
+* V2, V3, V12, V13, and V28 seem to be highly correlated
+* V8, V10, V15, V16, V26, and V30 seem to be highly correlated
+
+#### Comparing V9 and V25 against each other
+```{r echo=FALSE, warning=FALSE}
+ggplot(aes(x = V9, y = V25), data = telco) +
+  geom_point(alpha = 0.1) +
+  theme_fivethirtyeight() +
+  theme(axis.title=element_text(size=12)) +
+  xlab("V9") +
+  ylab("V25") +
+  stat_smooth() +
+  coord_cartesian(xlim = c(0, 60))
+```
+
+```{r}
+# Observe the correlation of these variables with churn and keep only the ones that have a higher correlation
+with(telco, cor.test(V9, as.numeric(churn)))
+with(telco, cor.test(V25, as.numeric(churn)))
+
+# Remove V25
+telco$V25 <- NULL
+```
+
+#### Comparing V29 and V32 against each other
+```{r echo=FALSE, warning=FALSE}
+ggplot(aes(x = V29, y = V32), data = telco) +
+  geom_point(alpha = 0.1) +
+  theme_fivethirtyeight() +
+  theme(axis.title=element_text(size=12)) +
+  xlab("V29") +
+  ylab("V32") +
+  stat_smooth() +
+  scale_x_log10() +
+  scale_y_log10()  +
+  coord_cartesian(xlim = c(1000, 10000000), ylim = c(1000,10000000))
+```
+
+```{r}
+# Observe the correlation of these variables with churn and keeping only the ones that have a higher correlation
+with(telco, cor.test(V29, as.numeric(churn)))
+with(telco, cor.test(V32, as.numeric(churn)))
+
+# Remove V32
+telco$V32 <- NULL
+```
+
+#### Comparing V1, V4, V5, V6, V7, V17, V18, V19, V20, V22, V23, and V31 against each other
+```{r echo=FALSE, warning=FALSE}
+ggpairs(telco, c("V1","V4","V5","V6","V7","V17","V18","V19","V20","V22","V23","V31"),
+        upper = list(continuous = wrap("cor", size = 4.75, alignPercent = 1))) +
+  theme_fivethirtyeight()
+```
+
+```{r}
+with(telco, cor.test(V1, as.numeric(churn)))
+with(telco, cor.test(V4, as.numeric(churn)))
+with(telco, cor.test(V5, as.numeric(churn)))
+with(telco, cor.test(V6, as.numeric(churn)))
+with(telco, cor.test(V7, as.numeric(churn)))
+with(telco, cor.test(V17, as.numeric(churn)))
+with(telco, cor.test(V18, as.numeric(churn)))
+with(telco, cor.test(V19, as.numeric(churn)))
+with(telco, cor.test(V20, as.numeric(churn)))
+with(telco, cor.test(V22, as.numeric(churn)))
+with(telco, cor.test(V23, as.numeric(churn)))
+with(telco, cor.test(V31, as.numeric(churn)))
+
+# Remove all but V1
+telco$V4 <- NULL
+telco$V5 <- NULL
+telco$V6 <- NULL
+telco$V7 <- NULL
+telco$V17 <- NULL
+telco$V18 <- NULL
+telco$V19 <- NULL
+telco$V20 <- NULL
+telco$V22 <- NULL
+telco$V23 <- NULL
+telco$V31 <- NULL
+```
+
+#### Comparing V2, V3, V12, V13, and V28 against each other
+```{r echo=FALSE, warning=FALSE}
+ggpairs(telco, c("V2", "V3", "V12", "V13", "V28"),
+        upper = list(continuous = wrap("cor", size = 4.75, alignPercent = 1))) +
+  theme_fivethirtyeight()
+```
+
+```{r}
+# Observe the correlation of these variables with churn and keeping only the ones that have a higher correlation
+with(telco, cor.test(V2, as.numeric(churn)))
+with(telco, cor.test(V3, as.numeric(churn)))
+with(telco, cor.test(V12, as.numeric(churn)))
+with(telco, cor.test(V13, as.numeric(churn)))
+with(telco, cor.test(V28, as.numeric(churn)))
+
+# Remove all but V13
+telco$V2 <- NULL
+telco$V3 <- NULL
+telco$V12 <- NULL
+telco$V28 <- NULL
+```
+
+#### Comparing V8, V10, V15, V16, V26, and V30 against each other
+```{r echo=FALSE, warning=FALSE}
+ggpairs(telco, c("V8", "V10", "V15", "V16", "V26", "V30"),
+        upper = list(continuous = wrap("cor", size = 4.75, alignPercent = 1))) +
+  theme_fivethirtyeight()
+```
+
+```{r}
+# Observe the correlation of these variables with churn and keeping only the ones that have a higher correlation 
+with(telco, cor.test(V8, as.numeric(churn)))
+with(telco, cor.test(V10, as.numeric(churn)))
+with(telco, cor.test(V15, as.numeric(churn)))
+with(telco, cor.test(V16, as.numeric(churn)))
+with(telco, cor.test(V26, as.numeric(churn)))
+with(telco, cor.test(V30, as.numeric(churn)))
+
+# Remove all but V16
+telco$V8 <- NULL
+telco$V10 <- NULL
+telco$V15 <- NULL
+telco$V26 <- NULL
+telco$V30 <- NULL
+```
+
+Looking at the dimensions of the dataset :
+```{r echo=FALSE}
+# Dimensions of the dataset
+dim(telco)
+```
+Looking at the first 6 rows of some of the columns:
+```{r echo=FALSE}
+head(tbl_df(telco))
+```
+Rename the variables, and look at the first 6 rows again:
+```{r echo=FALSE}
+names(telco)[1:16] <- paste("V", 1:16, sep = "")
+head(tbl_df(telco))
+```
+
+## MACHINE LEARNING
+
+The final step is to apply *machine learning*, which involves an in-depth data analysis. This step involves building models that predict the propensity of customers to churn, evaluating the results of models, and eventually, choosing the best suitable predictive model to predict customers who may churn.
+
+As the problem aims to predict a binary variable **churn** (Yes/No), a classification model should be applied. Since the model will learn from a training set and predict for a test dataset thereafter, it is a supervised model.
+
+Thus, the entire dataset will be **split** into a training set (train) and a testing set (test) in a **7:3** ratio, such that the distribution of the *churn* variable remains the same as before, for both of the resulting datasets.
+
+**<span style="color:darkred">Action</span>**: As was observed from the exploratory data analysis, the dataset is highly **imbalanced**. Therefore, **Synthetic Minority Over-Sampling Technique (SMOTE)** will be used, to oversample (increase the number of) minority/ under-represented class, and undersample the majority class, so as to strike a balance between the two classes in the training dataset.
+
+```{r echo=FALSE}
+# Splitting the dataset into training and test sets
+split <- sample.split(telco$churn, SplitRatio = 0.7)
+train <- subset(telco, split == TRUE) # TRAIN
+test <- subset(telco, split == FALSE) # TEST
+
+# Synthetic Minority Over - Sampling Technique (SMOTE)
+trainDF <- data.table(train, keep.rownames = F)
+trainDF <- SMOTE(form = churn ~ ., data = trainDF, perc.over = 300, perc.under = 150)
+
+## Distribution of people who churned
+ggplot(aes(x = churn), 
+       data = trainDF) +
+geom_bar(colour = c("#336600", "#990000"), 
+         aes(y = ..count../ sum(..count..)), 
+         stat = "count", 
+         fill = c("#669933","#CC3333"), 
+         size = 1.5) +
+ggtitle("Churn Analysis") +
+theme_fivethirtyeight() +
+xlab('Churn') +
+ylab('Percent') +
+theme(axis.title=element_text(size=12), 
+      legend.title = element_blank()) +
+geom_text(aes(label = round((..count../ sum(..count..))*100,2), 
+              y= ..prop..), 
+          stat = "count") +
+scale_y_continuous(labels=percent)
+```
+**<span style="color:blue">Finding</span>**: The dataset appears to be somewhat balanced after SMOTE, with nearly a 50:50 ratio.
+
+**<span style="color:darkred">Action</span>**: **One hot encoding** is a process by which each factor for each categorical variable is converted into a binary variable, so that it could be provided to ML algorithms to do a better job in prediction. Thus, one-hot encoding is done on the dataset to create a sparse matrix:
+```{r echo=FALSE}
+# One-hot encoding - Create a sparse matrix with categorical variables one-hot encoded
+sparse_matrix <- sparse.model.matrix(churn~.-1, data = trainDF)
+head(sparse_matrix)
+
+# Create a vector that contains only the rows depicting the customer has churned
+output_vector = trainDF[,churn] == "Yes"
+```
+
+### XGBOOST MODEL
+
+XGBoost is an implementation of gradient boosted decision trees designed for speed and performance. Gradient boosting involves three elements:
+
+* a loss function to be optimized
+
+* a weak learner to make predictions, and
+
+* an additive model to add weak learners to minimize the loss function.
+
+**<span style="color:darkred">Action</span>**: Create a XGBoost model, and plot feature importance plot to see the 15 most important features, as per the model:
+
+```{r echo=FALSE, results='hide'}
+# Create a XGBoost model
+XGBmod <- xgboost(data = sparse_matrix, output_vector, nrounds = 10, objective = "binary:logistic")
+
+# Look at feature importance
+importance <- xgb.importance(feature_names = colnames(sparse_matrix), model = XGBmod)
+```
+```{r echo=FALSE}
+# Feature importance plot
+xgb.plot.importance(importance_matrix = head(importance, 15))
+```
+**<span style="color:darkred">Action</span>**: Use the XGBoost model for prediction on the test set, store the result in a confusion matrix, and view the resulting confusion matrix: 
+```{r echo=FALSE}
+# Prediction on test set and storing the result in a confusion matrix
+XGBPredMat <- as.matrix(table(test$churn, as.numeric(predict(XGBmod, xgb.DMatrix(sparse.model.matrix(churn~.-1, data = test))))>0.4))
+
+# Renaming the column and row names
+colnames(XGBPredMat) <- c("Will Not Churn", "Will Churn")
+rownames(XGBPredMat) <- c("Didn't Churn", "Churned")
+
+# Confusion Matrix
+XGBPredMat
+```
+
+### RANDOM FOREST MODEL
+
+Random forests are ensemble learning methods which create multiple decision trees at the time of training, and outputs the class that is the mode of the classes, for classification models.
+
+For the purpose of this analysis, three random forest models will be created and compared against each other and the XGboost model, to select the best model at the end of the analysis.
+
+#### RANDOM FOREST MODEL 1
+
+**<span style="color:darkred">Action</span>**: Since the randomForest function from randomForest package can't handle categorical predictors with more than 53 categories, we create a dataframe which only contains variables upto 53 categorical factor levels. We then create the Random Forest model, use it for prediction on the test set, store the result in a confusion matrix, and view the resulting confusion matrix:
+```{r echo=FALSE}
+# Since randomForest can't handle categorical predictors with more than 53 categories, we create a dataframe trainRF, which only contains variables upto 53 categorical factor levels
+trainRF <- trainDF
+for(i in colnames(trainRF)[11:16]){
+  if(length(levels(trainRF[[i]])) > 50) {
+   trainRF[[i]] <- NULL
+   }
+}
+
+# Fit the random Forest model using all variables
+RFmod <- randomForest(factor(churn)~.,data = trainRF)
+
+# Prediction on test set and storing the result in a confusion matrix
+RFPredMat1 <- as.matrix(table(test$churn, predict(object = RFmod, test)))
+
+# Renaming the column and row names
+colnames(RFPredMat1) <- c("Will Not Churn", "Will Churn")
+rownames(RFPredMat1) <- c("Didn't Churn", "Churned")
+
+# Confusion Matrix
+RFPredMat1
+```
+**<span style="color:darkred">Action</span>**: Plot variable importance plot to select the top variables, as per the model:
+
+```{r echo=FALSE}
+# Use variable importance plot to select top variables
+varImpPlot(RFmod)
+```
+
+#### RANDOM FOREST MODEL 2
+
+**<span style="color:darkred">Action</span>**: Based on the above variable importance plot, the top 7 variables are selected, and the second random forest model is fit: 
+```{r echo=FALSE}
+# Set up parallel computation
+cl <- makeCluster(2)
+registerDoParallel(cl)
+
+# Specify the type of resampling
+fitControl <- trainControl(method = "repeatedcv",
+                           number = 5,
+                           repeats = 3,
+                           summaryFunction = prSummary,
+                           classProbs = TRUE,
+                           allowParallel = TRUE)
+
+# Set Seed
+set.seed(825)
+
+# Fit the random forest model with some of the top variables, as observed from the plot
+trainDF <- as.data.frame(trainDF)
+rfFit1 <- train(trainDF[,c(4, 6, 3, 7, 10, 1, 9)],
+                trainDF[,17],
+                data = trainDF,
+                method = "rf",
+                trControl = fitControl,
+                metric = "F"
+                )
+# RF Model 2
+rfFit1
+```
+**<span style="color:darkred">Action</span>**: Use the Random Forest model for prediction on the test set, store the result in a confusion matrix, and view the resulting confusion matrix: 
+```{r echo=FALSE}
+# Prediction on test set and storing the result in a confusion matrix
+RFPredMat2 <- as.matrix(table(test$churn, predict(object = rfFit1, test)))
+
+# Renaming the column and row names
+colnames(RFPredMat2) <- c("Will Not Churn", "Will Churn")
+rownames(RFPredMat2) <- c("Didn't Churn", "Churned")
+
+# Confusion Matrix
+RFPredMat2 
+```
+
+#### RANDOM FOREST MODEL 3
+
+**<span style="color:darkred">Action</span>**: Based on the feature importance plots from both XGBoost and the first Random forest model, some additional variables are included in the model, and the third random forest model is fit:
+```{r echo=FALSE}
+# Fit the random forest model with more of the top variables, as observed from the plot
+trainDF <- as.data.frame(trainDF)
+rfFit2 <- train(trainDF[,c(4, 6, 3, 7, 10, 1, 9, 8, 5)],
+                trainDF[,17],
+                data = trainDF,
+                method = "rf",
+                trControl = fitControl,
+                metric = "F"
+                )
+
+# RF Model 3
+rfFit2
+```
+**<span style="color:darkred">Action</span>**: Use the Random Forest model for prediction on the test set, store the result in a confusion matrix, and view the resulting confusion matrix: 
+```{r echo=FALSE} 
+# Prediction on test set and storing the result in a confusion matrix
+RFPredMat3 <- as.matrix(table(test$churn, predict(object = rfFit2, test)))
+
+# Renaming the column and row names
+colnames(RFPredMat3) <- c("Will Not Churn", "Will Churn")
+rownames(RFPredMat3) <- c("Didn't Churn", "Churned")
+
+# Confusion Matrix
+RFPredMat3
+
+# Stop parallel computation
+stopCluster(cl)
+registerDoSEQ()
+```
+
+## MODEL EVALUATION
+
+The predictive models will be compared on the basis of following metrics:
+
+- Precision (Positive Predictive Value) : Of those classified as *Will churn*, what proportion actually did?
+- Recall (True Positive Rate) : Of those that in fact Churned, what proportion were classified that way?
+- Accuracy : Calculated as the number of all correct predictions divided by the total number of the dataset values.
+- F Score : harmonic mean of precision and recall (so as to balance both accordingly)
+
+Comparing the models, we observe:
+
+```{r echo=FALSE}
+# Evaluate XG Boost Model
+P1 <- XGBPredMat[2,2]/(XGBPredMat[1,2] + XGBPredMat[2,2]) # Precision
+R1 <- XGBPredMat[2,2]/(XGBPredMat[2,1] + XGBPredMat[2,2]) # Recall
+F1 <- (2*P1*R1)/(P1 + R1)                                 # F-measure 
+A1 <- (XGBPredMat[1,1] + XGBPredMat[2,2])/sum(XGBPredMat) # Accuracy
+
+# Evaluate 1st Random Forest Model
+P2 <- RFPredMat1[2,2]/(RFPredMat1[1,2] + RFPredMat1[2,2]) # Precision
+R2 <- RFPredMat1[2,2]/(RFPredMat1[2,1] + RFPredMat1[2,2]) # Recall
+F2 <- (2*P2*R2)/(P2 + R2)                                 # F-measure 
+A2 <- (RFPredMat1[1,1] + RFPredMat1[2,2])/sum(RFPredMat1) # Accuracy
+
+# Evaluate 2nd Random Forest Model
+P3 <- RFPredMat2[2,2]/(RFPredMat2[1,2] + RFPredMat2[2,2]) # Precision
+R3 <- RFPredMat2[2,2]/(RFPredMat2[2,1] + RFPredMat2[2,2]) # Recall
+F3 <- (2*P3*R3)/(P3 + R3)                                 # F-measure 
+A3 <- (RFPredMat2[1,1] + RFPredMat2[2,2])/sum(RFPredMat2) # Accuracy
+
+# Evaluate 3rd Random Forest Model
+P4 <- RFPredMat3[2,2]/(RFPredMat3[1,2] + RFPredMat3[2,2]) # Precision
+R4 <- RFPredMat3[2,2]/(RFPredMat3[2,1] + RFPredMat3[2,2]) # Recall
+F4 <- (2*P4*R4)/(P4 + R4)                                 # F-measure 
+A4 <- (RFPredMat3[1,1] + RFPredMat3[2,2])/sum(RFPredMat3) # Accuracy
+
+# Create a model evaluation dataframe with all the metrics stored for each model
+modelEval <- data.frame(c(P1,P2,P3,P4),c(R1,R2,R3,R4),c(F1,F2,F3,F4),c(A1,A2,A3,A4))
+
+# Column names for the dataframe
+colnames(modelEval) <- c("Precision", "Recall", "Fmeasure", "Accuracy")
+
+# Add a column to specify the respective model names for the metrics
+modelEval$Model <- as.factor(c("XGB", "RF1", "RF2", "RF3"))
+
+# Rearrange columns
+modelEval <- modelEval[,c(5,1:4)]
+
+# Compare Precision of the models
+g1 <- ggplot(aes(x = Model, y = Precision, color = Model), data = modelEval) +
+  geom_point(size = 3) +
+  ggtitle("Precision - Comparison") +
+  theme_fivethirtyeight() + 
+  xlab('Model') +
+  ylab('Precision') +
+  theme(legend.position = "none")
+
+# Compare Recall of the models
+g2 <- ggplot(aes(x = Model, y = Recall, color = Model), data = modelEval) +
+  geom_point(size = 3) +
+  ggtitle("Recall - Comparison") +
+  theme_fivethirtyeight() + 
+  xlab('Model') +
+  ylab('Recall') +
+  theme(legend.position = "none")
+
+# Compare F - Measure of the models
+g3 <- ggplot(aes(x = Model, y = Fmeasure, color = Model), data = modelEval) +
+  geom_point(size = 3) +
+  ggtitle("F measure - Comparison") +
+  theme_fivethirtyeight() + 
+  xlab('Model') +
+  ylab('F - measure') +
+  theme(legend.position = "none")
+
+# Compare Accuracy of the models
+g4 <- ggplot(aes(x = Model, y = Accuracy, color = Model), data = modelEval) +
+  geom_point(size = 3) +
+  ggtitle("Accuracy - Comparison") +
+  theme_fivethirtyeight() + 
+  xlab('Model') +
+  ylab('Accuracy') +
+  theme(legend.position = "none")
+
+grid.arrange(g1,g2,g3,g4, ncol = 2)
+```
+As the analysis aims to predict most of the customers who are at a high risk of churning, with high confidence, the model with a **higher precision value** than others should be selected.
+
+**<span style="color:blue">Finding</span>**: Based on the precision, recall, F-measure, and accuracy values, as observed from the above graph, **XGBoost model** seems to be the best suitable model for prediction.
+
+## CONCLUSION 
+
+- The dataset was acquired from *[KDD Cup 2009: Customer Relationship prediction](http://www.kdd.org/kdd-cup/view/kdd-cup-2009/Intro)*
+
+- Data wrangling was performed, missing values were tackled, and the dataset was reformatted into an amenable form for further analysis
+
+- Exploratory data analysis was performed, and important characteristics and statistical properties of the dataset were summarized and visualized
+
+- An in-depth data analysis of the dataset was done through machine learning, models were built to predict the propensity of customers to churn, and the models were evaluated on the basis of suitable metrics
+
+- Based on the evaluation of the models, **XGBoost** model was found to be the best suitable model to predict customers with a high risk of churning
+
+- The results obtained have been optimized within the scope of this project; however, the model is not very confident about the predictions it makes about the customers, concluding that the analysis had a negative outcome  
+
+## FURTHER RESEARCH
+
+- **Dimensionality Reduction** : Since the dataset has a high dimensionality, the results can be further improved by using methods such as PCA, which are aimed towards dimensionality reduction
+
+- **Feature Selection** : Again, to reduce dimensionality, another probable approach is to apply feature selection methods, using Lasso, FOBA, etc., to only keep the variables that are most suitable for prediction
+
+## RECOMMENDATIONS
+
+- Discussed in the exploratory data analysis section, there are several attributes and factors that might cause a customer to churn. For instance, if V41 value is sJzTIal, then the customer is more likely to churn. This can cause the business to identify the problem with this scenario of V41, and take effective actions to reduce the churn among customers.
+
+- Even though the model has low precision value, it has a moderate recall value, suggesting that even though the confidence with which the model predicts the high risk customers is low, it still reduces the customer retention efforts by directing them solely towards a smaller customer base, rather than focusing on the entire customer base.
